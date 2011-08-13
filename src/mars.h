@@ -128,6 +128,7 @@ struct OutBuffer;
 // Can't include arraytypes.h here, need to declare these directly.
 template <typename TYPE> struct ArrayBase;
 typedef ArrayBase<struct Identifier> Identifiers;
+typedef ArrayBase<struct ImportPath> ImportPaths;
 typedef ArrayBase<char> Strings;
 
 // Put command line switches in here
@@ -250,7 +251,7 @@ struct Global
     const char *map_ext;        // for .map files
     const char *copyright;
     const char *written;
-    Strings *path;        // Array of char*'s which form the import lookup path
+    ImportPaths *path;        // Array of ImportPath*'s which form the import lookup path
     Strings *filePath;    // Array of char*'s which form the file import lookup path
     int structalign;
     const char *version;

@@ -311,14 +311,14 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
     {
         for (size_t i = 0; i < global.path->dim; i++)
         {
-            char *p = global.path->tdata()[i];
-            char *n = FileName::combine(p, sdi);
+            ImportPath *p = global.path->tdata()[i];
+            char *n = FileName::combine(p->path.toChars(), sdi);
             if (FileName::exists(n))
             {   result = n;
                 break;
             }
             mem.free(n);
-            n = FileName::combine(p, sd);
+            n = FileName::combine(p->path.toChars(), sd);
             if (FileName::exists(n))
             {   result = n;
                 break;
@@ -364,8 +364,8 @@ void Module::read(Loc loc)
             {
                 for (size_t i = 0; i < global.path->dim; i++)
                 {
-                    char *p = global.path->tdata()[i];
-                    fprintf(stdmsg, "import path[%d] = %s\n", i, p);
+                    ImportPath *p = global.path->tdata()[i];
+                    fprintf(stdmsg, "import path[%d] = %s\n", i, p->toChars());
                 }
             }
             else

@@ -921,16 +921,33 @@ int main(int argc, char *argv[])
     // Build import search path
     if (global.params.imppath)
     {
+        if (!global.path)
+            global.path = new ImportPaths();
         for (size_t i = 0; i < global.params.imppath->dim; i++)
         {
-            char *path = global.params.imppath->tdata()[i];
-            Strings *a = FileName::splitPath(path);
+            char *spec = global.params.imppath->tdata()[i];
+            char *keyval = strchr(spec, '=');
+            if (keyval)
+            {   ImportPath *imppath = new ImportPath(keyval + 1);
+                imppath->packages = new Strings();
+                *keyval = 0;
+                while (char* dot = strchr(spec, '.'))
+                {
+                    *dot = 0;
+                    imppath->packages->push(spec);
+                    spec = dot + 1;
+                }
+                imppath->packages->push(spec);
+                global.path->push(imppath);
+            }
+            else
+            {   Strings *a = FileName::splitPath(spec);
 
-            if (a)
-            {
-                if (!global.path)
-                    global.path = new Strings();
-                global.path->append(a);
+                if (a)
+                {
+                    for (size_t i = 0; i < a->dim; i++)
+                        global.path->push(new ImportPath(a->tdata()[i]));
+                }
             }
         }
     }

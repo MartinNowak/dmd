@@ -67,6 +67,7 @@ struct OutBuffer;
 // Can't include arraytypes.h here, need to declare these directly.
 template <typename TYPE> struct ArrayBase;
 typedef ArrayBase<struct File> Files;
+typedef ArrayBase<struct ImportPath> ImportPaths;
 typedef ArrayBase<char> Strings;
 
 
@@ -265,6 +266,16 @@ struct File : Object
     void checkoffset(size_t offset, size_t nbytes);
 
     void remove();              // delete file
+};
+
+struct ImportPath : Object
+{
+    String path;
+    Strings *packages; // possibly non-empty qualified import foo.bar=/path/foo/bar
+
+    ImportPath(char* path);
+
+    char *toChars();
 };
 
 struct OutBuffer : Object

@@ -1536,6 +1536,19 @@ char *File::toChars()
 }
 
 
+/************************* ImportPath *************************/
+
+ImportPath::ImportPath(char* p)
+    : path(p)
+{
+}
+
+char* ImportPath::toChars()
+{
+    // TODO: format import path packages
+    return path.toChars();
+}
+
 /************************* OutBuffer *************************/
 
 OutBuffer::OutBuffer()
