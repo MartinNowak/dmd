@@ -258,88 +258,123 @@ const char *Module::kind()
     return "module";
 }
 
-Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
-{   Module *m;
-    char *filename;
-
-    //printf("Module::load(ident = '%s')\n", ident->toChars());
-
-    // Build module filename by turning:
-    //  foo.bar.baz
-    // into:
-    //  foo\bar\baz
-    filename = ident->toChars();
-    if (packages && packages->dim)
-    {
-        OutBuffer buf;
-
-        for (size_t i = 0; i < packages->dim; i++)
-        {   Identifier *pid = packages->tdata()[i];
-
-            buf.writestring(pid->toChars());
-#if _WIN32
-            buf.writeByte('\\');
-#else
-            buf.writeByte('/');
-#endif
-        }
-        buf.writestring(filename);
-        buf.writeByte(0);
-        filename = (char *)buf.extractData();
+static bool matchingPackages(Identifiers *a, Strings *b)
+{
+    assert(a);
+    if (!b || a->dim < b->dim)
+        return false;
+    for (size_t i = 0; i < b->dim; i++)
+    {   Identifier *ident = a->tdata()[i];
+        char *name = b->tdata()[i];
+        if (strcmp(ident->toChars(), name))
+            return false;
     }
+    return true;
+}
 
-    m = new Module(filename, ident, 0, 0);
-    m->loc = loc;
+static char* buildModuleName(Identifiers *packages, size_t offset, Identifier *ident)
+{
+    OutBuffer buf;
+    if (packages)
+    {
+        assert(offset <= packages->dim);
+        for (size_t i = offset; i < packages->dim; i++)
+        {   Identifier *pid = packages->tdata()[i];
+            buf.writestring(pid->toChars());
+            buf.writeByte('.');
+        }
+    }
+    buf.writestring(ident->toChars());
+    buf.writeByte(0);
+    return buf.extractData();
+}
 
+static char* buildModulePath(const char* modname)
+{
+    size_t len = strlen(modname);
+    char *modpath = (char*)mem.malloc(len + 1);
+    memcpy(modpath, modname, len);
+    modpath[len] = 0;
+#if _WIN32
+    char repl = '\\';
+#else
+    char repl = '/';
+#endif
+    for (size_t i = 0; i < len; i++)
+        if (modpath[i] == '.')
+            modpath[i] = repl;
+    return modpath;
+}
+
+static File* findFile(const char* path, const char* modname, const char* modpath)
+{
     /* Search along global.path for .di file, then .d file.
      */
-    char *result = NULL;
-    FileName *fdi = FileName::forceExt(filename, global.hdr_ext);
-    FileName *fd  = FileName::forceExt(filename, global.mars_ext);
-    char *sdi = fdi->toChars();
-    char *sd  = fd->toChars();
+    char *fnames[2];
+    fnames[0] = FileName::forceExt(modpath, global.hdr_ext)->toChars();
+    fnames[1]  = FileName::forceExt(modpath, global.mars_ext)->toChars();
 
-    if (FileName::exists(sdi))
-        result = sdi;
-    else if (FileName::exists(sd))
-        result = sd;
-    else if (FileName::absolute(filename))
-        ;
-    else if (!global.path)
-        ;
-    else
+    size_t cnt = sizeof(fnames) / sizeof(fnames[0]);
+    File *file = NULL;
+    for (size_t i = 0; i < cnt && !file; i++)
     {
-        for (size_t i = 0; i < global.path->dim; i++)
+        char *n = FileName::combine(path, fnames[i]);
+        if (FileName::exists(n))
+            file = new File(n);
+        mem.free(n);
+    }
+    return file;
+}
+
+Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
+{
+    //printf("Module::load(ident = '%s')\n", ident->toChars());
+
+    File *file = NULL;
+    if (packages && packages->dim)
+    {
+        // check for qualified import path
+        if (global.path)
         {
-            ImportPath *p = global.path->tdata()[i];
-            char *n = FileName::combine(p->path.toChars(), sdi);
-            if (FileName::exists(n))
-            {   result = n;
+            for (size_t i = 0; i < global.path->dim; i++)
+            {   ImportPath *ipath = global.path->tdata()[i];
+                if (!matchingPackages(packages, ipath->packages))
+                    continue;
+
+                char* relmodname = buildModuleName(packages, ipath->packages->dim, ident);
+                char* relmodpath = buildModulePath(relmodname);
+                file = findFile(ipath->path.toChars(), relmodname, relmodpath);
+                mem.free(relmodname);
+                mem.free(relmodpath);
                 break;
             }
-            mem.free(n);
-            n = FileName::combine(p->path.toChars(), sd);
-            if (FileName::exists(n))
-            {   result = n;
-                break;
-            }
-            mem.free(n);
         }
     }
-    if (result)
-        m->srcfile = new File(result);
+
+    char* modname = buildModuleName(packages, 0, ident);
+    char* modpath = buildModulePath(modname);
+
+    if (!file)
+        file = findFile(0, modname, modpath);
+    if (!file && global.path)
+    {
+        for (size_t i = 0; i < global.path->dim; i++)
+        {   ImportPath *ipath = global.path->tdata()[i];
+            if (ipath->packages)
+                continue;
+            if (file = findFile(ipath->path.toChars(), modname, modpath))
+                break;
+        }
+    }
+
+    Module *m = new Module(modpath, ident, 0, 0);
+    m->loc = loc;
+    if (file)
+        m->srcfile = file;
 
     if (global.params.verbose)
     {
-        printf("import    ");
-        if (packages)
-        {
-            for (size_t i = 0; i < packages->dim; i++)
-            {   Identifier *pid = packages->tdata()[i];
-                printf("%s.", pid->toChars());
-            }
-        }
-        printf("%s\t(%s)\n", ident->toChars(), m->srcfile->toChars());
+        printf("import    %s\t(%s)\n", modname, m->srcfile->toChars());
     }
 
     m->read(loc);
@@ -349,6 +384,8 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
     d_gcc_magic_module(m);
 #endif
 
+    mem.free(modname);
+    mem.free(modpath);
     return m;
 }
 
