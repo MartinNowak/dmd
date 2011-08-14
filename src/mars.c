@@ -427,6 +427,7 @@ int main(int argc, char *argv[])
 #error "fix this"
 #endif
     getenv_setargv("DFLAGS", &argc, &argv);
+    global.downloadtool = getenv("DOWNLOADTOOL");
 
 #if 0
     for (size_t i = 0; i < argc; i++)

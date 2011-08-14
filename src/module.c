@@ -306,10 +306,71 @@ static char* buildModulePath(const char* modname)
     return modpath;
 }
 
+#if _WIN32
+  #define POPEN _popen
+  #define PCLOSE _pclose
+#else
+  #define POPEN popen
+  #define PCLOSE pclose
+#endif
+
+static File* loadUrl(const char* path, const char* modname)
+{
+    if (!global.downloadtool)
+    {
+        error("cannot load url without download tool, specify env variable DOWNLOADTOOL");
+        fatal();
+    }
+
+    OutBuffer cmd;
+    cmd.reserve(strlen(global.downloadtool) + strlen(path) + strlen(modname) + 3);
+    cmd.writestring(global.downloadtool);
+    cmd.writestring(" -I");
+    cmd.writestring(path);
+    cmd.writeByte(' ');
+    cmd.writestring(modname);
+    cmd.writeByte(0);
+
+    FILE *pipe = POPEN((const char*)cmd.data, "r");
+    if (!pipe)
+        goto Error;
+
+    char buf[1024];
+    if (char *fname = fgets(buf, sizeof(buf), pipe))
+    {
+        *(fname + strlen(fname) - 1) = 0; // zero newline character
+        File *file = new File(fname);
+        OutBuffer data;
+        while (char *p = fgets(buf, sizeof(buf), pipe))
+        {
+            data.write(p, strlen(p));
+        }
+
+        if (ferror(pipe) || PCLOSE(pipe))
+            goto Error;
+
+        file->len = data.offset;
+        file->buffer = (unsigned char*)data.extractData();
+        return file;
+    }
+    else
+    {
+        if (ferror(pipe) || !PCLOSE(pipe))
+            goto Error;
+        return NULL;
+    }
+
+ Error:
+    error("error while executing download command\n'%s'", cmd.data);
+    fatal();
+}
+
 static File* findFile(const char* path, const char* modname, const char* modpath)
 {
     /* Search along global.path for .di file, then .d file.
      */
+    if (path && strstr(path, "://"))
+        return loadUrl(path, modname);
     char *fnames[2];
     fnames[0] = FileName::forceExt(modpath, global.hdr_ext)->toChars();
     fnames[1]  = FileName::forceExt(modpath, global.mars_ext)->toChars();
@@ -392,6 +453,11 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
 void Module::read(Loc loc)
 {
     //printf("Module::read('%s') file '%s'\n", toChars(), srcfile->toChars());
+
+    // kludge to support downloaded sources
+    if (srcfile->buffer && srcfile->len)
+        return;
+
     if (srcfile->read())
     {   error(loc, "is in file '%s' which cannot be read", srcfile->toChars());
         if (!global.gag)

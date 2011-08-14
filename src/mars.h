@@ -255,6 +255,7 @@ struct Global
     Strings *filePath;    // Array of char*'s which form the file import lookup path
     int structalign;
     const char *version;
+    const char *downloadtool; // path to executable for downloading web sources
 
     Param params;
     unsigned errors;    // number of errors reported so far
