@@ -887,35 +887,80 @@ Dsymbol *PragmaDeclaration::syntaxCopy(Dsymbol *s)
 
 void PragmaDeclaration::setScope(Scope *sc)
 {
+    bool wantString = false;
+#if TARGET_NET
+    if (ident == Lexer::idPool("assembly"))
+        wantString = true;
+#endif // TARGET_NET
+    if (ident == Id::importpath)
+        wantString = true;
+
+    if (!wantString)
+        return;
+
+    StringExp *se;
+    if (!args || args->dim != 1)
+    {
+        error("pragma has invalid number of arguments");
+    }
+    else
+    {
+        Expression *e = args->tdata()[0];
+        e = e->semantic(sc);
+        e = e->optimize(WANTvalue | WANTinterpret);
+        args->tdata()[0] = e;
+        if (e->op != TOKstring)
+        {
+            error("string expected, not '%s'", e->toChars());
+        }
+        se = static_cast<StringExp*>(e);
+    }
+
+    if (!se)
+        return;
+
 #if TARGET_NET
     if (ident == Lexer::idPool("assembly"))
     {
-        if (!args || args->dim != 1)
-        {
-            error("pragma has invalid number of arguments");
+        PragmaScope* pragma = new PragmaScope(this, sc->parent, se);
+
+        assert(sc);
+        pragma->setScope(sc);
+
+        //add to module members
+        assert(sc->module);
+        assert(sc->module->members);
+        sc->module->members->push(pragma);
+    }
+#endif
+    if (ident == Id::importpath)
+    {
+        // TODO: merge copy and paste from mars.c
+        char *spec = (char*)se->string;
+        char *keyval = strchr(spec, '=');
+        if (keyval)
+        {   ImportPath *imppath = new ImportPath(keyval + 1);
+            imppath->packages = new Strings();
+            *keyval = 0;
+            while (char* dot = strchr(spec, '.'))
+            {
+                *dot = 0;
+                imppath->packages->push(spec);
+                spec = dot + 1;
+            }
+            imppath->packages->push(spec);
+            global.path->push(imppath);
         }
         else
-        {
-            Expression *e = args->tdata()[0];
-            e = e->semantic(sc);
-            e = e->optimize(WANTvalue | WANTinterpret);
-            args->tdata()[0] = e;
-            if (e->op != TOKstring)
+        {   Strings *a = FileName::splitPath(spec);
+
+            if (a)
             {
-                error("string expected, not '%s'", e->toChars());
+                for (size_t i = 0; i < a->dim; i++)
+                    global.path->push(new ImportPath(a->tdata()[i]));
             }
-            PragmaScope* pragma = new PragmaScope(this, sc->parent, static_cast<StringExp*>(e));
-
-            assert(sc);
-            pragma->setScope(sc);
-
-            //add to module members
-            assert(sc->module);
-            assert(sc->module->members);
-            sc->module->members->push(pragma);
         }
     }
-#endif // TARGET_NET
 }
 
 void PragmaDeclaration::semantic(Scope *sc)
@@ -1030,6 +1075,9 @@ void PragmaDeclaration::semantic(Scope *sc)
     {
     }
 #endif // TARGET_NET
+    else if (ident == Id::importpath)
+    {
+    }
     else if (global.params.ignoreUnsupportedPragmas)
     {
         if (global.params.verbose)
