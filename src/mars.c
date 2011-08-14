@@ -942,14 +942,7 @@ int main(int argc, char *argv[])
                 global.path->push(imppath);
             }
             else
-            {   Strings *a = FileName::splitPath(spec);
-
-                if (a)
-                {
-                    for (size_t i = 0; i < a->dim; i++)
-                        global.path->push(new ImportPath(a->tdata()[i]));
-                }
-            }
+                global.path->push(new ImportPath(spec));
         }
     }
 
