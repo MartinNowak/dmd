@@ -887,6 +887,17 @@ Dsymbol *PragmaDeclaration::syntaxCopy(Dsymbol *s)
 
 void PragmaDeclaration::setScope(Scope *sc)
 {
+    if (global.params.link && ident == Id::lib)
+    {
+        // kludge to allow pragma(lib, "") in imported modules
+        Dsymbols *objmembers = sc->module->importedFrom->members;
+        for (size_t i = 0; i < objmembers->dim; i++)
+            if (objmembers->tdata()[i] == this)
+                return;
+        objmembers->push(this);
+        return;
+    }
+
     bool wantString = false;
 #if TARGET_NET
     if (ident == Lexer::idPool("assembly"))
