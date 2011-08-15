@@ -914,16 +914,36 @@ static void applyToModules(Dsymbol *s, void (Module::*fun)(T), T val)
 
 void PragmaDeclaration::setScope(Scope *sc)
 {
+    Dsymbol::setScope(sc); // store original scope
+
     if (global.params.link && (ident == Id::lib || ident == Id::build))
     {
         // kludge to allow pragma(build/lib,) in imported modules
-        Dsymbols *objmembers = sc->module->importedFrom->members;
-        for (size_t i = 0; i < objmembers->dim; i++)
-            if (objmembers->tdata()[i] == this)
-                return;
-        objmembers->push(this);
+        if (sc->module != sc->module->importedFrom)
+        {
+            // transplant the pragma to the obj module
+            Dsymbols *objmembers = sc->module->importedFrom->members;
+            for (size_t i = 0; i < objmembers->dim; i++)
+                if (objmembers->tdata()[i] == this)
+                    assert(0);
+            objmembers->push(this);
+
+            // remove from original module
+            Dsymbols *modmembers = sc->module->members;
+            size_t i;
+            for (i = 0; i < modmembers->dim; i++)
+            {
+                if (modmembers->tdata()[i] == this)
+                {   modmembers->remove(i);
+                    break;
+                }
+            }
+            while (i++ < modmembers->dim)
+                assert(modmembers->tdata()[i] != this);
+        }
         return;
     }
+
 
     bool wantString = false;
 #if TARGET_NET
@@ -1028,7 +1048,7 @@ void PragmaDeclaration::semantic(Scope *sc)
         {
             Expression *e = args->tdata()[0];
 
-            e = e->semantic(sc);
+            e = e->semantic(this->scope); // within original scope
             e = e->optimize(WANTvalue | WANTinterpret);
             args->tdata()[0] = e;
             if (e->op == TOKerror)
@@ -1055,7 +1075,7 @@ void PragmaDeclaration::semantic(Scope *sc)
         {
             Expression *e = args->tdata()[0];
 
-            e = e->semantic(sc); // within original scope
+            e = e->semantic(this->scope); // within original scope
             e = e->optimize(WANTvalue | WANTinterpret);
             args->tdata()[0] = e;
             if (e->op == TOKerror)
