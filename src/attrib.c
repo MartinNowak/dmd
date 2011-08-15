@@ -1148,10 +1148,12 @@ void PragmaDeclaration::semantic(Scope *sc)
 #if TARGET_NET
     else if (ident == Lexer::idPool("assembly"))
     {
+        goto Lnodecl;
     }
 #endif // TARGET_NET
     else if (ident == Id::importpath)
     {
+        goto Lnodecl;
     }
     else if (global.params.ignoreUnsupportedPragmas)
     {
