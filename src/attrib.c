@@ -885,11 +885,38 @@ Dsymbol *PragmaDeclaration::syntaxCopy(Dsymbol *s)
     return pd;
 }
 
+static void applyToModules(Dsymbol *s, void (Module::*fun)())
+{
+    if (Module *m = s->isModule())
+        (m->*fun)();
+    else if (Package *p = s->isPackage())
+    {   Dsymbols *members = p->symtab->values();
+        for (size_t i = 0; i < members->dim; i++)
+            applyToModules(members->tdata()[i], fun);
+    }
+    else
+        assert(0);
+}
+
+template <typename T>
+static void applyToModules(Dsymbol *s, void (Module::*fun)(T), T val)
+{
+    if (Module *m = s->isModule())
+        (m->*fun)(val);
+    else if (Package *p = s->isPackage())
+    {   Dsymbols *members = p->symtab->values();
+        for (size_t i = 0; i < members->dim; i++)
+            applyToModules(members->tdata()[i], fun, val);
+    }
+    else
+        assert(0);
+}
+
 void PragmaDeclaration::setScope(Scope *sc)
 {
-    if (global.params.link && ident == Id::lib)
+    if (global.params.link && (ident == Id::lib || ident == Id::build))
     {
-        // kludge to allow pragma(lib, "") in imported modules
+        // kludge to allow pragma(build/lib,) in imported modules
         Dsymbols *objmembers = sc->module->importedFrom->members;
         for (size_t i = 0; i < objmembers->dim; i++)
             if (objmembers->tdata()[i] == this)
@@ -1020,6 +1047,30 @@ void PragmaDeclaration::semantic(Scope *sc)
         }
         goto Lnodecl;
     }
+    else if (ident == Id::build)
+    {
+        if (!args || args->dim != 1)
+            error("module or package expected for build");
+        else
+        {
+            Expression *e = args->tdata()[0];
+
+            e = e->semantic(sc); // within original scope
+            e = e->optimize(WANTvalue | WANTinterpret);
+            args->tdata()[0] = e;
+            if (e->op == TOKerror)
+                goto Lnodecl;
+            if (e->op != TOKimport)
+                error("module or package expected for build, not '%s'", e->toChars());
+            else
+            {
+                ScopeExp *se = (ScopeExp *)e;
+                assert(se->sds->isPackage());
+                applyToModules(se->sds, &Module::semantic);
+            }
+        }
+        goto Lnodecl;
+    }
 #if IN_GCC
     else if (ident == Id::GNU_asm)
     {
@@ -1128,6 +1179,28 @@ Lnodecl:
         error("pragma is missing closing ';'");
 }
 
+void PragmaDeclaration::semantic2(Scope *sc)
+{
+    if (ident == Id::build)
+    {
+        ScopeExp *se = (ScopeExp *)args->tdata()[0];
+        assert(se->op == TOKimport);
+        assert(se->sds->isPackage());
+        applyToModules(se->sds, &Module::semantic2);
+    }
+}
+
+void PragmaDeclaration::semantic3(Scope *sc)
+{
+    if (ident == Id::build)
+    {
+        ScopeExp *se = (ScopeExp *)args->tdata()[0];
+        assert(se->op == TOKimport);
+        assert(se->sds->isPackage());
+        applyToModules(se->sds, &Module::semantic3);
+    }
+}
+
 int PragmaDeclaration::oneMember(Dsymbol **ps)
 {
     *ps = NULL;
@@ -1168,6 +1241,13 @@ void PragmaDeclaration::toObjFile(int multiobj)
 #else
         error("pragma lib not supported");
 #endif
+    }
+    else if (ident == Id::build)
+    {
+        ScopeExp *se = (ScopeExp *)args->tdata()[0];
+        assert(se->op == TOKimport);
+        assert(se->sds->isPackage());
+        applyToModules(se->sds, &Module::genobjfile, multiobj);
     }
 #if DMDV2
     else if (ident == Id::startaddress)

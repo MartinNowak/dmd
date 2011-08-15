@@ -262,6 +262,7 @@ Msgtable msgtable[] =
 
     // For pragma's
     { "GNU_asm" },
+    { "build" },
     { "importpath" },
     { "lib" },
     { "msg" },

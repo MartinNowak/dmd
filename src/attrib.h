@@ -129,6 +129,8 @@ struct PragmaDeclaration : AttribDeclaration
     PragmaDeclaration(Loc loc, Identifier *ident, Expressions *args, Dsymbols *decl);
     Dsymbol *syntaxCopy(Dsymbol *s);
     void semantic(Scope *sc);
+    void semantic2(Scope *sc);
+    void semantic3(Scope *sc);
     void setScope(Scope *sc);
     int oneMember(Dsymbol **ps);
     void toCBuffer(OutBuffer *buf, HdrGenState *hgs);
