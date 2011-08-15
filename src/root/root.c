@@ -1540,6 +1540,7 @@ char *File::toChars()
 
 ImportPath::ImportPath(char* p)
     : path(p)
+    , packages(NULL)
 {
 }
 
