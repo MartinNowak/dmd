@@ -8,6 +8,7 @@
 #include <assert.h>
 
 #include "aav.h"
+#include "root.h"
 
 static const size_t prime_list[] = {
               31UL,
@@ -170,6 +171,49 @@ void _aaRehash(AA** paa)
     }
 }
 
+
+/********************************************
+ * Return an array of all keys.
+ */
+
+Array* _aaKeys(AA* aa)
+{
+    size_t len = _aaLen(aa);
+    if (!len)
+        return NULL;
+    Array *array = new Array;
+    array->reserve(len);
+    for (size_t i = 0; i < aa->b_length; i++)
+    {   aaA* e = aa->b[i];
+        while (e)
+        {   array->push(e->key);
+            e = e->next;
+        }
+    }
+    return array;
+}
+
+
+/********************************************
+ * Return an array of all values.
+ */
+
+Array* _aaValues(AA* aa)
+{
+    size_t len = _aaLen(aa);
+    if (!len)
+        return NULL;
+    Array *array = new Array;
+    array->reserve(len);
+    for (size_t i = 0; i < aa->b_length; i++)
+    {   aaA* e = aa->b[i];
+        while (e)
+        {   array->push(e->value);
+            e = e->next;
+        }
+    }
+    return array;
+}
 
 #if UNITTEST
 

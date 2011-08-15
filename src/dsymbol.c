@@ -1292,6 +1292,17 @@ Dsymbol *DsymbolTable::update(Dsymbol *s)
 #endif
 }
 
+#if STRINGTABLE
+#else
+Identifiers *DsymbolTable::keys()
+{
+    assert(sizeof(Identifiers) == sizeof(Array));
+    return (Identifiers *)_aaKeys(tab);
+}
 
-
-
+Dsymbols *DsymbolTable::values()
+{
+    assert(sizeof(Dsymbols) == sizeof(Array));
+    return (Dsymbols *)_aaValues(tab);
+}
+#endif

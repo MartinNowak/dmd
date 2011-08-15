@@ -339,6 +339,12 @@ struct DsymbolTable : Object
     // Look for Dsymbol in table. If there, return it. If not, insert s and return that.
     Dsymbol *update(Dsymbol *s);
     Dsymbol *insert(Identifier *ident, Dsymbol *s);     // when ident and s are not the same
+
+#if STRINGTABLE
+#else
+    Identifiers *keys();
+    Dsymbols *values();
+#endif
 };
 
 #endif /* DMD_DSYMBOL_H */
