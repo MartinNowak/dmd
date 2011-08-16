@@ -345,6 +345,7 @@ static File* loadUrl(const char* path, const char* modname)
         {
             data.write(p, strlen(p));
         }
+        data.writeByte(0); // EOF
 
         if (ferror(pipe) || PCLOSE(pipe))
             goto Error;
