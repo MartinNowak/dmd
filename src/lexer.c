@@ -2859,7 +2859,11 @@ unsigned char *Lexer::combineComments(unsigned char *c1, unsigned char *c2)
 
 Identifier *Lexer::idPool(const char *s)
 {
-    size_t len = strlen(s);
+    return idPool(s, strlen(s));
+}
+
+Identifier *Lexer::idPool(const char *s, size_t len)
+{
     StringValue *sv = stringtable.update(s, len);
     Identifier *id = (Identifier *) sv->ptrvalue;
     if (!id)

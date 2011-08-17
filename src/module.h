@@ -179,11 +179,20 @@ struct Module : Package
     Module *isModule() { return this; }
 };
 
+struct QualPackageName
+{
+    Identifiers* packages;
+
+    QualPackageName(Identifiers *packages);
+
+    bool containsOrEquals(QualPackageName *p);
+    char *toChars();
+};
 
 struct ModuleDeclaration
 {
+    QualPackageName pkgName;
     Identifier *id;
-    Identifiers *packages;            // array of Identifier's representing packages
     bool safe;
 
     ModuleDeclaration(Identifiers *packages, Identifier *id, bool safe);

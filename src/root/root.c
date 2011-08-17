@@ -1535,21 +1535,6 @@ char *File::toChars()
     return name->toChars();
 }
 
-
-/************************* ImportPath *************************/
-
-ImportPath::ImportPath(char* p)
-    : path(p)
-    , packages(NULL)
-{
-}
-
-char* ImportPath::toChars()
-{
-    // TODO: format import path packages
-    return path.toChars();
-}
-
 /************************* OutBuffer *************************/
 
 OutBuffer::OutBuffer()

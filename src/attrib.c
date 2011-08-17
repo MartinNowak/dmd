@@ -994,23 +994,10 @@ void PragmaDeclaration::setScope(Scope *sc)
     if (ident == Id::importpath)
     {
         // TODO: merge copy and paste from mars.c
-        char *spec = (char*)se->string;
-        char *keyval = strchr(spec, '=');
-        if (keyval)
-        {   ImportPath *imppath = new ImportPath(keyval + 1);
-            imppath->packages = new Strings();
-            *keyval = 0;
-            while (char* dot = strchr(spec, '.'))
-            {
-                *dot = 0;
-                imppath->packages->push(spec);
-                spec = dot + 1;
-            }
-            imppath->packages->push(spec);
-            global.path->push(imppath);
-        }
-        else
-            global.path->push(new ImportPath(spec));
+        if (!global.importSpecs)
+            global.importSpecs = new ImportSpecs();
+        ImportSpec *impspec = ImportSpec::parse((char*)se->string);
+        global.importSpecs->push(impspec);
     }
 }
 

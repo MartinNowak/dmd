@@ -124,6 +124,51 @@ bool Loc::equals(const Loc& loc)
     return linnum == loc.linnum && FileName::equals(filename, loc.filename);
 }
 
+/************************* ImportSpec *************************/
+
+ImportSpec::ImportSpec()
+    : path(NULL)
+    , pkgName(NULL)
+{
+}
+
+ImportSpec *ImportSpec::parse(const char* spec)
+{
+    ImportSpec *impspec = new ImportSpec;
+
+    char *keyval = (char*)memchr(spec, '=', strlen(spec));
+    if (keyval)
+    {   impspec->path = keyval + 1;
+        Identifiers *pkgs = new Identifiers;
+        while (char *dot = (char*)memchr(spec, '.', keyval - spec))
+        {
+            *dot = 0;
+            pkgs->push(Lexer::idPool(spec, dot - spec));
+            spec = dot + 1;
+        }
+        pkgs->push(Lexer::idPool(spec, keyval - spec));
+        impspec->pkgName = new QualPackageName(pkgs);
+        return impspec;
+    }
+    else
+        impspec->path = spec;
+    return impspec;
+}
+
+const char *ImportSpec::toChars()
+{
+    if (pkgName)
+    {
+        OutBuffer buf;
+        buf.writestring(pkgName->toChars());
+        buf.writeByte('=');
+        buf.writestring(path);
+        buf.writeByte(0);
+        return buf.extractData();
+    } else
+        return path;
+}
+
 /**************************************
  * Print error message and exit.
  */
@@ -922,27 +967,13 @@ int main(int argc, char *argv[])
     // Build import search path
     if (global.params.imppath)
     {
-        if (!global.path)
-            global.path = new ImportPaths();
+        if (!global.importSpecs)
+            global.importSpecs = new ImportSpecs();
         for (size_t i = 0; i < global.params.imppath->dim; i++)
         {
             char *spec = global.params.imppath->tdata()[i];
-            char *keyval = strchr(spec, '=');
-            if (keyval)
-            {   ImportPath *imppath = new ImportPath(keyval + 1);
-                imppath->packages = new Strings();
-                *keyval = 0;
-                while (char* dot = strchr(spec, '.'))
-                {
-                    *dot = 0;
-                    imppath->packages->push(spec);
-                    spec = dot + 1;
-                }
-                imppath->packages->push(spec);
-                global.path->push(imppath);
-            }
-            else
-                global.path->push(new ImportPath(spec));
+            ImportSpec *impspec = ImportSpec::parse(spec);
+            global.importSpecs->push(impspec);
         }
     }
 

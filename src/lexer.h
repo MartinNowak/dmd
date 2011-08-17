@@ -278,6 +278,7 @@ struct Lexer
 
     static void initKeywords();
     static Identifier *idPool(const char *s);
+    static Identifier *idPool(const char *s, size_t len); // for non-null terminated strings
     static Identifier *uniqueId(const char *s);
     static Identifier *uniqueId(const char *s, int num);
 

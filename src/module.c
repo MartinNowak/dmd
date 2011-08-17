@@ -368,7 +368,7 @@ static File* loadUrl(const char* path, const char* modname)
 
 static File* findFile(const char* path, const char* modname, const char* modpath)
 {
-    /* Search along global.path for .di file, then .d file.
+    /* Search along global.importSpecs for .di file, then .d file.
      */
     if (path && strstr(path, "://"))
         return loadUrl(path, modname);
@@ -396,19 +396,21 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
     if (packages && packages->dim)
     {
         // check for qualified import path
-        if (global.path)
+        if (global.importSpecs)
         {
-            for (size_t i = 0; i < global.path->dim; i++)
-            {   ImportPath *ipath = global.path->tdata()[i];
-                if (!matchingPackages(packages, ipath->packages))
-                    continue;
+            QualPackageName pkgName = QualPackageName(packages);
 
-                char* relmodname = buildModuleName(packages, ipath->packages->dim, ident);
-                char* relmodpath = buildModulePath(relmodname);
-                file = findFile(ipath->path.toChars(), relmodname, relmodpath);
-                mem.free(relmodname);
-                mem.free(relmodpath);
-                break;
+            for (size_t i = 0; i < global.importSpecs->dim; i++)
+            {   ImportSpec *impspec = global.importSpecs->tdata()[i];
+                if (impspec->pkgName && impspec->pkgName->containsOrEquals(&pkgName))
+                {
+                    char* relmodname = buildModuleName(packages, impspec->pkgName->packages->dim, ident);
+                    char* relmodpath = buildModulePath(relmodname);
+                    file = findFile(impspec->path, relmodname, relmodpath);
+                    mem.free(relmodname);
+                    mem.free(relmodpath);
+                    break;
+                }
             }
         }
     }
@@ -418,13 +420,13 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
 
     if (!file)
         file = findFile(0, modname, modpath);
-    if (!file && global.path)
+    if (!file && global.importSpecs)
     {
-        for (size_t i = 0; i < global.path->dim; i++)
-        {   ImportPath *ipath = global.path->tdata()[i];
-            if (ipath->packages)
+        for (size_t i = 0; i < global.importSpecs->dim; i++)
+        {   ImportSpec *impspec = global.importSpecs->tdata()[i];
+            if (impspec->pkgName)
                 continue;
-            if (file = findFile(ipath->path.toChars(), modname, modpath))
+            if (file = findFile(impspec->path, modname, modpath))
                 break;
         }
     }
@@ -464,12 +466,12 @@ void Module::read(Loc loc)
         if (!global.gag)
         {   /* Print path
              */
-            if (global.path)
+            if (global.importSpecs)
             {
-                for (size_t i = 0; i < global.path->dim; i++)
+                for (size_t i = 0; i < global.importSpecs->dim; i++)
                 {
-                    ImportPath *p = global.path->tdata()[i];
-                    fprintf(stdmsg, "import path[%d] = %s\n", i, p->toChars());
+                    ImportSpec *p = global.importSpecs->tdata()[i];
+                    fprintf(stdmsg, "import path[%d]: %s\n", i, p->toChars());
                 }
             }
             else
@@ -735,7 +737,7 @@ void Module::parse()
     if (md)
     {   this->ident = md->id;
         this->safe = md->safe;
-        dst = Package::resolve(md->packages, &this->parent, NULL);
+        dst = Package::resolve(md->pkgName.packages, &this->parent, NULL);
     }
     else
     {
@@ -1193,27 +1195,62 @@ int Module::selfImports()
 }
 
 
+/* =========================== QualPackageName ===================== */
+
+QualPackageName::QualPackageName(Identifiers *pkgs)
+{
+    packages = pkgs;
+}
+
+bool QualPackageName::containsOrEquals(QualPackageName *p)
+{
+    if (packages->dim > p->packages->dim)
+        return false;
+    for (size_t i = 0; i < packages->dim; i++)
+        if (packages->tdata()[i] != p->packages->tdata()[i])
+            return false;
+    return true;
+}
+
+char *QualPackageName::toChars()
+{
+    size_t len = 0;
+    for (size_t i = 0; i < packages->dim; i++)
+        len += packages->tdata()[i]->len;
+    if (packages->dim)
+        len += packages->dim - 1; // for the dots
+
+    if (!len)
+        return NULL;
+
+    OutBuffer buf;
+    buf.reserve(len);
+    for (size_t i = 0; i < packages->dim; i++)
+    {   Identifier *pid = packages->tdata()[i];
+        if (i != 0)
+            buf.writeByte('.');
+        buf.write(pid->string, pid->len);
+    }
+    buf.writeByte(0);
+    return (char*)buf.extractData();
+}
+
 /* =========================== ModuleDeclaration ===================== */
 
 ModuleDeclaration::ModuleDeclaration(Identifiers *packages, Identifier *id, bool safe)
+  : pkgName(packages)
+  , id(id)
+  , safe(safe)
 {
-    this->packages = packages;
-    this->id = id;
-    this->safe = safe;
 }
 
 char *ModuleDeclaration::toChars()
 {
     OutBuffer buf;
-
-    if (packages && packages->dim)
+    if (pkgName.packages && pkgName.packages->dim)
     {
-        for (size_t i = 0; i < packages->dim; i++)
-        {   Identifier *pid = packages->tdata()[i];
-
-            buf.writestring(pid->toChars());
-            buf.writeByte('.');
-        }
+        buf.writestring(pkgName.toChars());
+        buf.data[buf.offset] = '.';
     }
     buf.writestring(id->toChars());
     buf.writeByte(0);
