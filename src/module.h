@@ -47,7 +47,7 @@ struct Package : ScopeDsymbol
 
 struct Module : Package
 {
-    static Module *rootModule;
+    static Modules rootModules;
     static DsymbolTable *modules;       // symbol table of all modules
     static Modules amodules;            // array of all modules
     static Dsymbols deferred;   // deferred Dsymbol's needing semantic() run on them
@@ -114,6 +114,7 @@ struct Module : Package
     Module(char *arg, Identifier *ident, int doDocComment, int doHdrGen);
     ~Module();
 
+    static Module *rootModule();
     static Module *load(Loc loc, QualModuleName *modname);
 
     void toCBuffer(OutBuffer *buf, HdrGenState *hgs);

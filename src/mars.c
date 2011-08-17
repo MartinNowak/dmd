@@ -995,8 +995,7 @@ int main(int argc, char *argv[])
     }
 
     // Create Modules
-    Modules modules;
-    modules.reserve(files.dim);
+    Module::rootModules.reserve(files.dim);
     int firstmodule = 1;
     for (size_t i = 0; i < files.dim; i++)
     {
@@ -1113,7 +1112,7 @@ int main(int argc, char *argv[])
 
         Identifier *id = Lexer::idPool(name);
         m = new Module(files.tdata()[i], id, global.params.doDocComments, global.params.doHdrGeneration);
-        modules.push(m);
+        Module::rootModules.push(m);
 
         if (firstmodule)
         {   global.params.objfiles->push(m->objfile->name->str);
@@ -1129,31 +1128,29 @@ int main(int argc, char *argv[])
 #define ASYNCREAD 1
 #if ASYNCREAD
     // Multi threaded
-    AsyncRead *aw = AsyncRead::create(modules.dim);
-    for (size_t i = 0; i < modules.dim; i++)
+    AsyncRead *aw = AsyncRead::create(Module::rootModules.dim);
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-        m = modules.tdata()[i];
+        m = Module::rootModules.tdata()[i];
         aw->addFile(m->srcfile);
     }
     aw->start();
 #else
     // Single threaded
-    for (size_t i = 0; i < modules.dim; i++)
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-        m = modules.tdata()[i];
+        m = Module::rootModules.tdata()[i];
         m->read(0);
     }
 #endif
 
     // Parse files
     int anydocfiles = 0;
-    for (size_t i = 0; i < modules.dim; i++)
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-        m = modules.tdata()[i];
+        m = Module::rootModules.tdata()[i];
         if (global.params.verbose)
             printf("parse     %s\n", m->toChars());
-        if (!Module::rootModule)
-            Module::rootModule = m;
         m->importedFrom = m;
         if (!global.params.oneobj || i == 0 || m->isDocFile)
             m->deleteObjFile();
@@ -1170,7 +1167,7 @@ int main(int argc, char *argv[])
             m->gendocfile();
 
             // Remove m from list of modules
-            modules.remove(i);
+            Module::rootModules.remove(i);
             i--;
 
             // Remove m's object file from list of object files
@@ -1191,7 +1188,7 @@ int main(int argc, char *argv[])
     AsyncRead::dispose(aw);
 #endif
 
-    if (anydocfiles && modules.dim &&
+    if (anydocfiles && Module::rootModules.dim &&
         (global.params.oneobj || global.params.objname))
     {
         error("conflicting Ddoc and obj generation options");
@@ -1206,9 +1203,9 @@ int main(int argc, char *argv[])
          * line switches and what else is imported, they are generated
          * before any semantic analysis.
          */
-        for (size_t i = 0; i < modules.dim; i++)
+        for (size_t i = 0; i < Module::rootModules.dim; i++)
         {
-            m = modules.tdata()[i];
+            m = Module::rootModules.tdata()[i];
             if (global.params.verbose)
                 printf("import    %s\n", m->toChars());
             m->genhdrfile();
@@ -1218,9 +1215,9 @@ int main(int argc, char *argv[])
         fatal();
 
     // load all unconditional imports for better symbol resolving
-    for (size_t i = 0; i < modules.dim; i++)
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-       m = modules.tdata()[i];
+       m = Module::rootModules.tdata()[i];
        if (global.params.verbose)
            printf("importall %s\n", m->toChars());
        m->importAll(0);
@@ -1229,9 +1226,9 @@ int main(int argc, char *argv[])
        fatal();
 
     // Do semantic analysis
-    for (size_t i = 0; i < modules.dim; i++)
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-        m = modules.tdata()[i];
+        m = Module::rootModules.tdata()[i];
         if (global.params.verbose)
             printf("semantic  %s\n", m->toChars());
         m->semantic();
@@ -1243,9 +1240,9 @@ int main(int argc, char *argv[])
     Module::runDeferredSemantic();
 
     // Do pass 2 semantic analysis
-    for (size_t i = 0; i < modules.dim; i++)
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-        m = modules.tdata()[i];
+        m = Module::rootModules.tdata()[i];
         if (global.params.verbose)
             printf("semantic2 %s\n", m->toChars());
         m->semantic2();
@@ -1254,9 +1251,9 @@ int main(int argc, char *argv[])
         fatal();
 
     // Do pass 3 semantic analysis
-    for (size_t i = 0; i < modules.dim; i++)
+    for (size_t i = 0; i < Module::rootModules.dim; i++)
     {
-        m = modules.tdata()[i];
+        m = Module::rootModules.tdata()[i];
         if (global.params.verbose)
             printf("semantic3 %s\n", m->toChars());
         m->semantic3();
@@ -1298,9 +1295,9 @@ int main(int argc, char *argv[])
                 fatal();
         }
 
-        for (size_t i = 0; i < modules.dim; i++)
+        for (size_t i = 0; i < Module::rootModules.dim; i++)
         {
-            m = modules.tdata()[i];
+            m = Module::rootModules.tdata()[i];
             if (global.params.verbose)
                 printf("inline scan %s\n", m->toChars());
             m->inlineScan();
@@ -1328,31 +1325,33 @@ int main(int argc, char *argv[])
     // Generate output files
 
     if (global.params.doXGeneration)
-        json_generate(&modules);
+        json_generate(&Module::rootModules);
 
     if (global.params.oneobj)
     {
-        for (size_t i = 0; i < modules.dim; i++)
+        if (Module::rootModules.dim)
         {
-            m = modules.tdata()[i];
+            obj_start(Module::rootModule()->srcfile->toChars());
+        }
+        for (size_t i = 0; i < Module::rootModules.dim; i++)
+        {
+            m = Module::rootModules.tdata()[i];
             if (global.params.verbose)
                 printf("code      %s\n", m->toChars());
-            if (i == 0)
-                obj_start(m->srcfile->toChars());
             m->genobjfile(0);
             if (!global.errors && global.params.doDocComments)
                 m->gendocfile();
         }
-        if (!global.errors && modules.dim)
+        if (!global.errors && Module::rootModules.dim)
         {
-            obj_end(library, modules.tdata()[0]->objfile);
+            obj_end(library, Module::rootModule()->objfile);
         }
     }
     else
     {
-        for (size_t i = 0; i < modules.dim; i++)
+        for (size_t i = 0; i < Module::rootModules.dim; i++)
         {
-            m = modules.tdata()[i];
+            m = Module::rootModules.tdata()[i];
             if (global.params.verbose)
                 printf("code      %s\n", m->toChars());
             if (global.params.obj)
@@ -1407,9 +1406,9 @@ int main(int argc, char *argv[])
 
                 /* Delete .obj files and .exe file
                  */
-                for (size_t i = 0; i < modules.dim; i++)
+                for (size_t i = 0; i < Module::rootModules.dim; i++)
                 {
-                    Module *m = modules.tdata()[i];
+                    Module *m = Module::rootModules.tdata()[i];
                     m->deleteObjFile();
                     if (global.params.oneobj)
                         break;

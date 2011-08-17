@@ -46,7 +46,7 @@
 
 ClassDeclaration *Module::moduleinfo;
 
-Module *Module::rootModule;
+Modules Module::rootModules;
 DsymbolTable *Module::modules;
 Modules Module::amodules;
 
@@ -251,6 +251,12 @@ void Module::deleteObjFile()
 
 Module::~Module()
 {
+}
+
+Module *Module::rootModule()
+{
+    assert(rootModules.dim);
+    return rootModules.tdata()[0];
 }
 
 const char *Module::kind()
