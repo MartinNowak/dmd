@@ -25,14 +25,13 @@
 
 /********************************* Import ****************************/
 
-Import::Import(Loc loc, Identifiers *packages, Identifier *id, Identifier *aliasId,
+Import::Import(Loc loc, QualModuleName* mname, Identifier *aliasId,
         int isstatic)
-    : Dsymbol(id)
+    : Dsymbol(mname->modId())
+    , modname(mname)
 {
-    assert(id);
+    assert(mname->modId());
     this->loc = loc;
-    this->packages = packages;
-    this->id = id;
     this->aliasId = aliasId;
     this->isstatic = isstatic;
     pkg = NULL;
@@ -41,8 +40,8 @@ Import::Import(Loc loc, Identifiers *packages, Identifier *id, Identifier *alias
     if (aliasId)
         this->ident = aliasId;
     // Kludge to change Import identifier to first package
-    else if (packages && packages->dim)
-        this->ident = packages->tdata()[0];
+    else if (modname->pkgDepth())
+        this->ident = modname->ids.tdata()[0];
 }
 
 void Import::addAlias(Identifier *name, Identifier *alias)
@@ -69,7 +68,7 @@ Dsymbol *Import::syntaxCopy(Dsymbol *s)
 
     Import *si;
 
-    si = new Import(loc, packages, id, aliasId, isstatic);
+    si = new Import(loc, modname, aliasId, isstatic);
 
     for (size_t i = 0; i < names.dim; i++)
     {
@@ -84,9 +83,9 @@ void Import::load(Scope *sc)
     //printf("Import::load('%s')\n", toChars());
 
     // See if existing module
-    DsymbolTable *dst = Package::resolve(packages, NULL, &pkg);
+    DsymbolTable *dst = Package::resolve(modname, NULL, &pkg);
 
-    Dsymbol *s = dst->lookup(id);
+    Dsymbol *s = dst->lookup(modname->modId());
     if (s)
     {
 #if TARGET_NET
@@ -102,8 +101,8 @@ void Import::load(Scope *sc)
     if (!mod)
     {
         // Load module
-        mod = Module::load(loc, packages, id);
-        dst->insert(id, mod);           // id may be different from mod->ident,
+        mod = Module::load(loc, modname);
+        dst->insert(modname->modId(), mod);           // id may be different from mod->ident,
                                         // if so then insert alias
         if (!mod->importedFrom)
             mod->importedFrom = sc ? sc->module->importedFrom : Module::rootModule;
@@ -236,16 +235,7 @@ void Import::semantic(Scope *sc)
             StorageClassDeclaration::stcToCBuffer(ob, STCstatic);
         ob->writestring(": ");
 
-        if (packages)
-        {
-            for (size_t i = 0; i < packages->dim; i++)
-            {
-                Identifier *pid = packages->tdata()[i];
-                ob->printf("%s.", pid->toChars());
-            }
-        }
-
-        ob->writestring(id->toChars());
+        ob->writestring(modname->toChars());
         ob->writestring(" (");
         if (mod)
             escapePath(ob, mod->srcfile->toChars());
@@ -354,7 +344,7 @@ int Import::overloadInsert(Dsymbol *s)
 
 void Import::toCBuffer(OutBuffer *buf, HdrGenState *hgs)
 {
-    if (hgs->hdrgen && id == Id::object)
+    if (hgs->hdrgen && modname->modId() == Id::object)
         return;         // object is imported by default
 
     if (isstatic)
@@ -364,15 +354,8 @@ void Import::toCBuffer(OutBuffer *buf, HdrGenState *hgs)
     {
         buf->printf("%s = ", aliasId->toChars());
     }
-    if (packages && packages->dim)
-    {
-        for (size_t i = 0; i < packages->dim; i++)
-        {   Identifier *pid = packages->tdata()[i];
-
-            buf->printf("%s.", pid->toChars());
-        }
-    }
-    buf->printf("%s;", id->toChars());
+    buf->writestring(modname->toChars());
+    buf->writeByte(';');
     buf->writenl();
 }
 

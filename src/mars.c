@@ -139,15 +139,15 @@ ImportSpec *ImportSpec::parse(const char* spec)
     char *keyval = (char*)memchr(spec, '=', strlen(spec));
     if (keyval)
     {   impspec->path = keyval + 1;
-        Identifiers *pkgs = new Identifiers;
+        Identifiers pkgs;
         while (char *dot = (char*)memchr(spec, '.', keyval - spec))
         {
             *dot = 0;
-            pkgs->push(Lexer::idPool(spec, dot - spec));
+            pkgs.push(Lexer::idPool(spec, dot - spec));
             spec = dot + 1;
         }
-        pkgs->push(Lexer::idPool(spec, keyval - spec));
-        impspec->pkgName = new QualPackageName(pkgs);
+        pkgs.push(Lexer::idPool(spec, keyval - spec));
+        impspec->pkgName = new QualModuleName(&pkgs);
         return impspec;
     }
     else

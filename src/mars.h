@@ -357,7 +357,7 @@ struct Loc
 struct ImportSpec
 {
     const char *path;
-    struct QualPackageName *pkgName; // possibly qualified import foo.bar=/path/foo/bar
+    struct QualModuleName *pkgName; // possibly qualified import foo.bar=/path/foo/bar
 
     static ImportSpec *parse(const char *spec);
 

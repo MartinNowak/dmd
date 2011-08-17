@@ -38,7 +38,7 @@ struct Package : ScopeDsymbol
     Package(Identifier *ident);
     const char *kind();
 
-    static DsymbolTable *resolve(Identifiers *packages, Dsymbol **pparent, Package **ppkg);
+    static DsymbolTable *resolve(QualModuleName *modname, Dsymbol **pparent, Package **ppkg);
 
     Package *isPackage() { return this; }
 
@@ -114,7 +114,7 @@ struct Module : Package
     Module(char *arg, Identifier *ident, int doDocComment, int doHdrGen);
     ~Module();
 
-    static Module *load(Loc loc, Identifiers *packages, Identifier *ident);
+    static Module *load(Loc loc, QualModuleName *modname);
 
     void toCBuffer(OutBuffer *buf, HdrGenState *hgs);
     void toJsonBuffer(OutBuffer *buf);
@@ -179,20 +179,22 @@ struct Module : Package
     Module *isModule() { return this; }
 };
 
-struct QualPackageName
+struct QualModuleName
 {
-    Identifiers* packages;
+    Identifiers ids;
+    bool lastIsModule;
 
-    QualPackageName(Identifiers *packages);
+    QualModuleName(Identifiers *pkgs, Identifier *id=NULL);
 
-    bool containsOrEquals(QualPackageName *p);
+    Identifier *modId();
+    size_t pkgDepth() const;
+    bool containsOrEquals(QualModuleName *p);
     char *toChars();
 };
 
 struct ModuleDeclaration
 {
-    QualPackageName pkgName;
-    Identifier *id;
+    QualModuleName modname;
     bool safe;
 
     ModuleDeclaration(Identifiers *packages, Identifier *id, bool safe);

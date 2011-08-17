@@ -2092,7 +2092,7 @@ Import *Parser::parseImport(Dsymbols *decldefs, int isstatic)
 {   Import *s;
     Identifier *id;
     Identifier *aliasid = NULL;
-    Identifiers *a;
+    Identifiers pkgs;
     Loc loc;
 
     //printf("Parser::parseImport()\n");
@@ -2106,7 +2106,7 @@ Import *Parser::parseImport(Dsymbols *decldefs, int isstatic)
         }
 
         loc = this->loc;
-        a = NULL;
+        pkgs.setDim(0);
         id = token.ident;
         nextToken();
         if (!aliasid && token.value == TOKassign)
@@ -2116,9 +2116,7 @@ Import *Parser::parseImport(Dsymbols *decldefs, int isstatic)
         }
         while (token.value == TOKdot)
         {
-            if (!a)
-                a = new Identifiers();
-            a->push(id);
+            pkgs.push(id);
             nextToken();
             if (token.value != TOKidentifier)
             {   error("identifier expected following package");
@@ -2128,7 +2126,7 @@ Import *Parser::parseImport(Dsymbols *decldefs, int isstatic)
             nextToken();
         }
 
-        s = new Import(loc, a, id, aliasid, isstatic);
+        s = new Import(loc, new QualModuleName(&pkgs, id), aliasid, isstatic);
         decldefs->push(s);
 
         /* Look for

@@ -258,33 +258,16 @@ const char *Module::kind()
     return "module";
 }
 
-static bool matchingPackages(Identifiers *a, Strings *b)
-{
-    assert(a);
-    if (!b || a->dim < b->dim)
-        return false;
-    for (size_t i = 0; i < b->dim; i++)
-    {   Identifier *ident = a->tdata()[i];
-        char *name = b->tdata()[i];
-        if (strcmp(ident->toChars(), name))
-            return false;
-    }
-    return true;
-}
-
-static char* buildModuleName(Identifiers *packages, size_t offset, Identifier *ident)
+static char* buildModuleName(Identifiers *ids, size_t offset)
 {
     OutBuffer buf;
-    if (packages)
-    {
-        assert(offset <= packages->dim);
-        for (size_t i = offset; i < packages->dim; i++)
-        {   Identifier *pid = packages->tdata()[i];
-            buf.writestring(pid->toChars());
+    assert(offset < ids->dim);
+    for (size_t i = offset; i < ids->dim; i++)
+    {   Identifier *pid = ids->tdata()[i];
+        if (i != 0)
             buf.writeByte('.');
-        }
+        buf.writestring(pid->toChars());
     }
-    buf.writestring(ident->toChars());
     buf.writeByte(0);
     return buf.extractData();
 }
@@ -388,23 +371,21 @@ static File* findFile(const char* path, const char* modname, const char* modpath
     return file;
 }
 
-Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
+Module *Module::load(Loc loc, QualModuleName *modname)
 {
     //printf("Module::load(ident = '%s')\n", ident->toChars());
 
     File *file = NULL;
-    if (packages && packages->dim)
+    if (modname->pkgDepth())
     {
         // check for qualified import path
         if (global.importSpecs)
         {
-            QualPackageName pkgName = QualPackageName(packages);
-
             for (size_t i = 0; i < global.importSpecs->dim; i++)
             {   ImportSpec *impspec = global.importSpecs->tdata()[i];
-                if (impspec->pkgName && impspec->pkgName->containsOrEquals(&pkgName))
+                if (impspec->pkgName && impspec->pkgName->containsOrEquals(modname))
                 {
-                    char* relmodname = buildModuleName(packages, impspec->pkgName->packages->dim, ident);
+                    char* relmodname = buildModuleName(&modname->ids, impspec->pkgName->ids.dim);
                     char* relmodpath = buildModulePath(relmodname);
                     file = findFile(impspec->path, relmodname, relmodpath);
                     mem.free(relmodname);
@@ -415,30 +396,30 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
         }
     }
 
-    char* modname = buildModuleName(packages, 0, ident);
-    char* modpath = buildModulePath(modname);
+    char* modchars = modname->toChars();
+    char* pathchars = buildModulePath(modchars);
 
     if (!file)
-        file = findFile(0, modname, modpath);
+        file = findFile(0, modchars, pathchars);
     if (!file && global.importSpecs)
     {
         for (size_t i = 0; i < global.importSpecs->dim; i++)
         {   ImportSpec *impspec = global.importSpecs->tdata()[i];
             if (impspec->pkgName)
                 continue;
-            if (file = findFile(impspec->path, modname, modpath))
+            if (file = findFile(impspec->path, modchars, pathchars))
                 break;
         }
     }
 
-    Module *m = new Module(modpath, ident, 0, 0);
+    Module *m = new Module(pathchars, modname->modId(), 0, 0);
     m->loc = loc;
     if (file)
         m->srcfile = file;
 
     if (global.params.verbose)
     {
-        printf("import    %s\t(%s)\n", modname, m->srcfile->toChars());
+        printf("import    %s\t(%s)\n", modchars, m->srcfile->toChars());
     }
 
     m->read(loc);
@@ -448,8 +429,8 @@ Module *Module::load(Loc loc, Identifiers *packages, Identifier *ident)
     d_gcc_magic_module(m);
 #endif
 
-    mem.free(modname);
-    mem.free(modpath);
+    mem.free(modchars);
+    mem.free(pathchars);
     return m;
 }
 
@@ -735,9 +716,9 @@ void Module::parse()
     DsymbolTable *dst;
 
     if (md)
-    {   this->ident = md->id;
+    {   this->ident = md->modname.modId();
         this->safe = md->safe;
-        dst = Package::resolve(md->pkgName.packages, &this->parent, NULL);
+        dst = Package::resolve(&md->modname, &this->parent, NULL);
     }
     else
     {
@@ -791,7 +772,7 @@ void Module::importAll(Scope *prevsc)
     {
         if (members->dim == 0 || members->tdata()[0]->ident != Id::object)
         {
-            Import *im = new Import(0, NULL, Id::object, NULL, 0);
+            Import *im = new Import(0, new QualModuleName(NULL, Id::object), NULL, 0);
             members->shift(im);
         }
     }
@@ -1195,38 +1176,55 @@ int Module::selfImports()
 }
 
 
-/* =========================== QualPackageName ===================== */
+/* =========================== QualModuleName ===================== */
 
-QualPackageName::QualPackageName(Identifiers *pkgs)
+QualModuleName::QualModuleName(Identifiers *pkgs, Identifier *id /*=NULL*/)
+    : lastIsModule(false)
 {
-    packages = pkgs;
+    ids.append(pkgs);
+    if (id)
+    {   ids.push(id);
+        lastIsModule = true;
+    }
 }
 
-bool QualPackageName::containsOrEquals(QualPackageName *p)
+Identifier *QualModuleName::modId()
 {
-    if (packages->dim > p->packages->dim)
+    assert(lastIsModule);
+    return ids.tdata()[ids.dim - 1];
+}
+
+bool QualModuleName::containsOrEquals(QualModuleName *p)
+{
+    if (lastIsModule || pkgDepth() > p->pkgDepth())
         return false;
-    for (size_t i = 0; i < packages->dim; i++)
-        if (packages->tdata()[i] != p->packages->tdata()[i])
+    for (size_t i = 0; i < ids.dim; i++)
+        if (ids.tdata()[i] != p->ids.tdata()[i])
             return false;
     return true;
 }
 
-char *QualPackageName::toChars()
+size_t QualModuleName::pkgDepth() const
+{
+    assert(ids.dim || !lastIsModule);
+    return ids.dim - (lastIsModule ? 1 : 0);
+}
+
+char *QualModuleName::toChars()
 {
     size_t len = 0;
-    for (size_t i = 0; i < packages->dim; i++)
-        len += packages->tdata()[i]->len;
-    if (packages->dim)
-        len += packages->dim - 1; // for the dots
+    for (size_t i = 0; i < ids.dim; i++)
+        len += ids.tdata()[i]->len;
+    if (ids.dim)
+        len += ids.dim - 1; // for the dots
 
     if (!len)
         return NULL;
 
     OutBuffer buf;
     buf.reserve(len);
-    for (size_t i = 0; i < packages->dim; i++)
-    {   Identifier *pid = packages->tdata()[i];
+    for (size_t i = 0; i < ids.dim; i++)
+    {   Identifier *pid = ids.tdata()[i];
         if (i != 0)
             buf.writeByte('.');
         buf.write(pid->string, pid->len);
@@ -1238,23 +1236,14 @@ char *QualPackageName::toChars()
 /* =========================== ModuleDeclaration ===================== */
 
 ModuleDeclaration::ModuleDeclaration(Identifiers *packages, Identifier *id, bool safe)
-  : pkgName(packages)
-  , id(id)
+  : modname(packages, id)
   , safe(safe)
 {
 }
 
 char *ModuleDeclaration::toChars()
 {
-    OutBuffer buf;
-    if (pkgName.packages && pkgName.packages->dim)
-    {
-        buf.writestring(pkgName.toChars());
-        buf.data[buf.offset] = '.';
-    }
-    buf.writestring(id->toChars());
-    buf.writeByte(0);
-    return (char *)buf.extractData();
+    return modname.toChars();
 }
 
 /* =========================== Package ===================== */
@@ -1271,7 +1260,7 @@ const char *Package::kind()
 }
 
 
-DsymbolTable *Package::resolve(Identifiers *packages, Dsymbol **pparent, Package **ppkg)
+DsymbolTable *Package::resolve(QualModuleName *modname, Dsymbol **pparent, Package **ppkg)
 {
     DsymbolTable *dst = Module::modules;
     Dsymbol *parent = NULL;
@@ -1280,41 +1269,39 @@ DsymbolTable *Package::resolve(Identifiers *packages, Dsymbol **pparent, Package
     if (ppkg)
         *ppkg = NULL;
 
-    if (packages)
-    {
-        for (size_t i = 0; i < packages->dim; i++)
-        {   Identifier *pid = packages->tdata()[i];
-            Dsymbol *p;
+    for (size_t i = 0; i < modname->pkgDepth(); i++)
+    {   Identifier *pid = modname->ids.tdata()[i];
+        Dsymbol *p;
 
-            p = dst->lookup(pid);
-            if (!p)
-            {
-                p = new Package(pid);
-                dst->insert(p);
-                p->parent = parent;
-                ((ScopeDsymbol *)p)->symtab = new DsymbolTable();
-            }
-            else
-            {
-                assert(p->isPackage());
+        p = dst->lookup(pid);
+        if (!p)
+        {
+            p = new Package(pid);
+            dst->insert(p);
+            p->parent = parent;
+            ((ScopeDsymbol *)p)->symtab = new DsymbolTable();
+        }
+        else
+        {
+            assert(p->isPackage());
 #if TARGET_NET  //dot net needs modules and packages with same name
 #else
-                if (p->isModule())
-                {   p->error("module and package have the same name");
-                    fatal();
-                    break;
-                }
-#endif
+            if (p->isModule())
+            {   p->error("module and package have the same name");
+                fatal();
+                break;
             }
-            parent = p;
-            dst = ((Package *)p)->symtab;
-            if (ppkg && !*ppkg)
-                *ppkg = (Package *)p;
+#endif
         }
-        if (pparent)
-        {
-            *pparent = parent;
-        }
+        parent = p;
+        dst = ((Package *)p)->symtab;
+        if (ppkg && !*ppkg)
+            *ppkg = (Package *)p;
     }
+    if (pparent)
+    {
+        *pparent = parent;
+    }
+
     return dst;
 }
