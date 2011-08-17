@@ -359,7 +359,7 @@ static char* buildModuleName(Identifiers *ids, size_t offset)
     assert(offset < ids->dim);
     for (size_t i = offset; i < ids->dim; i++)
     {   Identifier *pid = ids->tdata()[i];
-        if (i != 0)
+        if (i != offset)
             buf.writeByte('.');
         buf.writestring(pid->toChars());
     }
