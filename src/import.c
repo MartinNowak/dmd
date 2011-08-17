@@ -110,6 +110,15 @@ void Import::load(Scope *sc)
     if (!pkg)
         pkg = mod;
 
+
+    // TODO: should this really use the module declaration for matching ?
+    if (mod->md)
+        modname = &mod->md->modname;
+    for (size_t i = 0; i < Module::rootPackages.dim; i++)
+    {   QualModuleName *pkgname = Module::rootPackages.tdata()[i];
+        if (pkgname->containsOrEquals(modname))
+            Module::addRootModule(mod);
+    }
     //printf("-Import::load('%s'), pkg = %p\n", toChars(), pkg);
 }
 

@@ -47,6 +47,7 @@
 ClassDeclaration *Module::moduleinfo;
 
 Modules Module::rootModules;
+ArrayBase<QualModuleName> Module::rootPackages;
 DsymbolTable *Module::modules;
 Modules Module::amodules;
 
@@ -257,6 +258,94 @@ Module *Module::rootModule()
 {
     assert(rootModules.dim);
     return rootModules.tdata()[0];
+}
+
+void Module::addRootModule(Module *m)
+{
+    for (size_t i = 0; i < rootModules.dim; i++)
+        if (rootModules.tdata()[i] == m)
+            return;
+    rootModules.push(m);
+    m->importedFrom = m;
+    // TODO: avoid code duplication
+    while (m->semanticRun < rootModule()->semanticRun)
+    {
+        switch (m->semanticRun)
+        {
+        case 0:
+            // TODO: headergen, ddoc ?
+            if (global.params.verbose)
+                printf("importall %s\n", m->toChars());
+            m->importAll(0);
+            if (global.params.verbose)
+                printf("semantic  %s\n", m->toChars());
+            m->semantic();
+            break;
+        case 1:
+            if (global.params.verbose)
+                printf("semantic2 %s\n", m->toChars());
+            m->semantic2();
+            break;
+        case 2:
+            if (global.params.verbose)
+                printf("semantic3 %s\n", m->toChars());
+            m->semantic3();
+            break;
+        case 3:
+            if (global.params.useInline)
+            {
+                if (global.params.verbose)
+                    printf("inline scan %s\n", m->toChars());
+                m->inlineScan();
+            }
+            break;
+        }
+    }
+}
+
+void Module::addRootPackage(Package *p)
+{
+    Identifiers pkgs;
+    while (1)
+    {   pkgs.shift(p->ident);
+        if (!p->parent)
+            break;
+        p = p->parent->isPackage();
+        assert(p);
+    }
+    QualModuleName *pkgname = new QualModuleName(&pkgs, NULL);
+
+    for (size_t i = 0; i < rootPackages.dim; i++)
+    {   QualModuleName *rootpkg = rootPackages.tdata()[i];
+        if (rootpkg->containsOrEquals(pkgname))
+        {
+            p->error("Root package '%s' already contains '%s'", rootpkg->toChars(), pkgname->toChars());
+            return;
+        }
+    }
+
+    rootPackages.push(pkgname);
+
+    for (size_t i = 0; i < amodules.dim; i++)
+    {   Module *m = amodules.tdata()[i];
+        if (m->md)
+        {   if (pkgname->containsOrEquals(&m->md->modname))
+                addRootModule(m);
+        }
+        else
+        {
+            pkgs.setDim(0);
+            Dsymbol *s = m->parent;
+            while (s)
+            {   assert(s->isPackage());
+                pkgs.shift(s->ident);
+                s = s->parent;
+            }
+            QualModuleName modName = QualModuleName(&pkgs, m->ident);
+            if (pkgname->containsOrEquals(&modName))
+                addRootModule(m);
+        }
+    }
 }
 
 const char *Module::kind()
