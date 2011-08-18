@@ -61,13 +61,13 @@ void Module::init()
 
 Module::Module(char *filename, Identifier *ident, int doDocComment, int doHdrGen)
         : Package(ident)
+        , arg(filename, 0)
 {
     FileName *srcfilename;
     FileName *objfilename;
     FileName *symfilename;
 
 //    printf("Module::Module(filename = '%s', ident = '%s')\n", filename, ident->toChars());
-    this->arg = filename;
     md = NULL;
     errors = 0;
     numlines = 0;
@@ -194,9 +194,9 @@ void Module::setDocfile()
     if (global.params.docname)
         argdoc = global.params.docname;
     else if (global.params.preservePaths)
-        argdoc = (char *)arg;
+        argdoc = arg.str;
     else
-        argdoc = FileName::name((char *)arg);
+        argdoc = FileName::name(arg.str);
     if (!FileName::absolute(argdoc))
     {   //FileName::ensurePathExists(global.params.docdir);
         argdoc = FileName::combine(global.params.docdir, argdoc);
@@ -222,9 +222,9 @@ void Module::setHdrfile()
     if (global.params.hdrname)
         arghdr = global.params.hdrname;
     else if (global.params.preservePaths)
-        arghdr = (char *)arg;
+        arghdr = arg.str;
     else
-        arghdr = FileName::name((char *)arg);
+        arghdr = FileName::name(arg.str);
     if (!FileName::absolute(arghdr))
     {   //FileName::ensurePathExists(global.params.hdrdir);
         arghdr = FileName::combine(global.params.hdrdir, arghdr);

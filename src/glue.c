@@ -348,7 +348,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = BCret;
             b->Belem = eictor;
-            sictor->Sfunc->Fstartline.Sfilename = arg;
+            sictor->Sfunc->Fstartline.Sfilename = arg.str;
             sictor->Sfunc->Fstartblock = b;
             writefunc(sictor);
         }
@@ -373,7 +373,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = BCret;
             b->Belem = ector;
-            sctor->Sfunc->Fstartline.Sfilename = arg;
+            sctor->Sfunc->Fstartline.Sfilename = arg.str;
             sctor->Sfunc->Fstartblock = b;
             writefunc(sctor);
 #if STATICCTOR
@@ -389,7 +389,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = BCret;
             b->Belem = edtor;
-            sdtor->Sfunc->Fstartline.Sfilename = arg;
+            sdtor->Sfunc->Fstartline.Sfilename = arg.str;
             sdtor->Sfunc->Fstartblock = b;
             writefunc(sdtor);
         }
@@ -413,7 +413,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = BCret;
             b->Belem = esharedctor;
-            ssharedctor->Sfunc->Fstartline.Sfilename = arg;
+            ssharedctor->Sfunc->Fstartline.Sfilename = arg.str;
             ssharedctor->Sfunc->Fstartblock = b;
             writefunc(ssharedctor);
 #if STATICCTOR
@@ -429,7 +429,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = BCret;
             b->Belem = eshareddtor;
-            sshareddtor->Sfunc->Fstartline.Sfilename = arg;
+            sshareddtor->Sfunc->Fstartline.Sfilename = arg.str;
             sshareddtor->Sfunc->Fstartblock = b;
             writefunc(sshareddtor);
         }
@@ -443,7 +443,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = BCret;
             b->Belem = etest;
-            stest->Sfunc->Fstartline.Sfilename = arg;
+            stest->Sfunc->Fstartline.Sfilename = arg.str;
             stest->Sfunc->Fstartblock = b;
             writefunc(stest);
         }
@@ -519,7 +519,7 @@ void Module::genobjfile(int multiobj)
             block *b = block_calloc();
             b->BC = bc;
             b->Belem = e;
-            ma->Sfunc->Fstartline.Sfilename = arg;
+            ma->Sfunc->Fstartline.Sfilename = arg.str;
             ma->Sfunc->Fstartblock = b;
             ma->Sclass = SCglobal;
             ma->Sfl = 0;

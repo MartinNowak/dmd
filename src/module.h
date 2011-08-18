@@ -58,7 +58,7 @@ struct Module : Package
     static ClassDeclaration *moduleinfo;
 
 
-    const char *arg;    // original argument name
+    String arg;    // original argument name
     ModuleDeclaration *md; // if !NULL, the contents of the ModuleDeclaration declaration
     File *srcfile;      // input source file
     File *objfile;      // output .obj file
