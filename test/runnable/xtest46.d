@@ -4167,6 +4167,33 @@ void test2856()
 }
 
 /***************************************************/
+// 7005
+
+extern(C)
+{
+    void foo7005(int i);
+    static assert(foo7005.mangleof == "foo7005");
+
+    void bar7005(Args...)(Args args);
+    static assert(bar7005!(int).mangleof == "bar7005");
+    static assert(bar7005!(int, double).mangleof == "bar7005");
+}
+
+struct S7005
+{
+    extern(C) static int foo7005(int n);
+}
+
+static assert(S7005.foo7005.mangleof == "foo7005");
+
+void test7005()
+{
+    extern(C) static int foo7005(int n);
+    static assert(foo7005.mangleof == "foo7005");
+}
+
+
+/***************************************************/
 
 int main()
 {
@@ -4366,6 +4393,7 @@ int main()
     test6330();
     test6868();
     test2856();
+    test7005();
 
     printf("Success\n");
     return 0;
