@@ -105,7 +105,8 @@ char *Declaration::mangle()
 #endif
     {
         //printf("Declaration::mangle(this = %p, '%s', parent = '%s', linkage = %d)\n", this, toChars(), parent ? parent->toChars() : "null", linkage);
-        if (!parent || parent->isModule() || linkage == LINKcpp) // if at global scope
+        if (!parent || parent->isModule() ||        // if at global scope
+            linkage == LINKcpp || linkage == LINKc) // or cpp or c
         {
             // If it's not a D declaration, no mangling
             switch (linkage)
@@ -116,18 +117,21 @@ char *Declaration::mangle()
                 case LINKc:
                 case LINKwindows:
                 case LINKpascal:
-                    return ident->toChars();
+                    goto Lident;
 
                 case LINKcpp:
 #if CPP_MANGLE
                     return cpp_mangle(this);
 #else
                     // Windows C++ mangling is done by C++ back end
-                    return ident->toChars();
+                    goto Lident;
 #endif
 
                 case LINKdefault:
                     error("forward declaration");
+                    goto Lident;
+
+                Lident:
                     return ident->toChars();
 
                 default:
