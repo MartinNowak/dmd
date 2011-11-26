@@ -257,6 +257,20 @@ void FuncDeclaration::semantic(Scope *sc)
     size_t nparams = Parameter::dim(f->parameters);
 
     linkage = sc->linkage;
+
+    if (ad && !(linkage == LINKd || linkage == LINKcpp))
+    {
+        const char *p;
+        switch (linkage)
+        {   case LINKc      : p = "C";       break;
+            case LINKwindows: p = "Windows"; break;
+            case LINKpascal : p = "Pascal";  break;
+            default         : assert(0);
+        }
+        warning(loc, "extern(%s) for non-static methods ignored", p);
+        linkage = LINKd;
+    }
+
     protection = sc->protection;
 
     /* Purity and safety can be inferred for some functions by examining
