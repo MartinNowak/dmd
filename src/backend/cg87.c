@@ -98,26 +98,26 @@ int NDP::savetop = 0;           /* # of entries used in NDP::save[]     */
  */
 
 code *ndp_fstp(code *c, int i, tym_t ty)
-{   unsigned grex = I64 ? (REX_W << 16) : 0;
+{
     switch (tybasic(ty))
     {
         case TYfloat:
         case TYifloat:
         case TYcfloat:
-            c = genc1(c,0xD9,grex | modregrm(2,3,BPRM),FLndp,i); // FSTP m32real i[BP]
+            c = genc1(c,0xD9,modregrm(2,3,BPRM),FLndp,i); // FSTP m32real i[BP]
             break;
 
         case TYdouble:
         case TYdouble_alias:
         case TYidouble:
         case TYcdouble:
-            c = genc1(c,0xDD,grex | modregrm(2,3,BPRM),FLndp,i); // FSTP m64real i[BP]
+            c = genc1(c,0xDD,modregrm(2,3,BPRM),FLndp,i); // FSTP m64real i[BP]
             break;
 
         case TYldouble:
         case TYildouble:
         case TYcldouble:
-            c = genc1(c,0xDB,grex | modregrm(2,7,BPRM),FLndp,i); // FSTP m80real i[BP]
+            c = genc1(c,0xDB,modregrm(2,7,BPRM),FLndp,i); // FSTP m80real i[BP]
             break;
 
         default:
@@ -127,26 +127,26 @@ code *ndp_fstp(code *c, int i, tym_t ty)
 }
 
 code *ndp_fld(code *c, int i, tym_t ty)
-{   unsigned grex = I64 ? (REX_W << 16) : 0;
+{
     switch (tybasic(ty))
     {
         case TYfloat:
         case TYifloat:
         case TYcfloat:
-            c = genc1(c,0xD9,grex | modregrm(2,0,BPRM),FLndp,i);
+            c = genc1(c,0xD9,modregrm(2,0,BPRM),FLndp,i); // FLD m32real i[BP]
             break;
 
         case TYdouble:
         case TYdouble_alias:
         case TYidouble:
         case TYcdouble:
-            c = genc1(c,0xDD,grex | modregrm(2,0,BPRM),FLndp,i);
+            c = genc1(c,0xDD,modregrm(2,0,BPRM),FLndp,i); // FLD m64real i[BP]
             break;
 
         case TYldouble:
         case TYildouble:
         case TYcldouble:
-            c = genc1(c,0xDB,grex | modregrm(2,5,BPRM),FLndp,i); // FLD m80real i[BP]
+            c = genc1(c,0xDB,modregrm(2,5,BPRM),FLndp,i); // FLD m80real i[BP]
             break;
 
         default:
@@ -3032,7 +3032,7 @@ code *cnvt87(elem *e,regm_t *pretregs)
             pop87();
 
             c1 = genfwait(c1);
-            gen2sib(c1,mf,grex | modregrm(0,rf,4),modregrm(0,4,SP));                   // FISTP [ESP]
+            gen2sib(c1,mf,modregrm(0,rf,4),modregrm(0,4,SP));                           // FISTP [ESP]
 
             retregs = *pretregs & (ALLREGS | mBP);
             if (!retregs)
@@ -3040,7 +3040,7 @@ code *cnvt87(elem *e,regm_t *pretregs)
             c2 = allocreg(&retregs,&reg,tym);
 
             c2 = genfwait(c2);                                                          // FWAIT
-            c2 = genc1(c2,0xD9,grex | modregrm(2,5,4) + 256*modregrm(0,4,SP),FLconst,szoff);   // FLDCW szoff[ESP]
+            c2 = genc1(c2,0xD9,modregrm(2,5,4) + 256*modregrm(0,4,SP),FLconst,szoff);   // FLDCW szoff[ESP]
 
             if (szoff > REGSIZE)
             {   szpush -= REGSIZE;
