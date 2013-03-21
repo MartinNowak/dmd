@@ -20,6 +20,7 @@ src/dmd.exe
 src/impcnvgen.exe
 src/optabgen.exe
 src/verstr.h
+VERSION_DEVEL
 *.map
 .DS_Store
 trace.def

@@ -55,6 +55,7 @@ LDFLAGS=-lm -lstdc++ -lpthread
 
 HOST_CC=g++
 CC=$(HOST_CC) $(MODEL_FLAG)
+GIT=git
 
 #OPT=-g -g3
 #OPT=-O2
@@ -163,7 +164,7 @@ dmd: $(DMD_OBJS)
 clean:
 	rm -f $(DMD_OBJS) dmd optab.o id.o impcnvgen idgen id.c id.h \
 	impcnvtab.c optabgen debtab.c optab.c cdxxx.c elxxx.c fltables.c \
-	tytab.c verstr.h core \
+	tytab.c verstr.h ../VERSION_DEVEL core \
 	*.cov *.gcda *.gcno
 
 ######## optabgen generates some source
@@ -195,8 +196,23 @@ impcnvgen : mtype.h impcnvgen.c
 
 #########
 
-verstr.h : ../VERSION
-	printf \"`cat ../VERSION`\" > verstr.h
+.PHONY: verstr.h ../VERSION_DEVEL
+
+verstr.h: $(if $(RELEASE),../VERSION,../VERSION_DEVEL)
+	@if [ \"`cat $<`\" != `cat $@ 2>/dev/null` ]; then                      \
+	    printf \"`cat $<`\" > $@;                                           \
+	fi
+
+../VERSION_DEVEL: ../VERSION
+	@if [ -d ../.git ]; then                                                \
+	    if [ -n "`$(GIT) status --porcelain -uno`" ]; then                  \
+	        $(GIT) log -1 --format="`cat $<`-devel-%h-dirty" > $@;          \
+	    else                                                                \
+	        $(GIT) log -1 --format="`cat $<`-devel-%h" > $@;                \
+	    fi                                                                  \
+	else                                                                    \
+	    printf "`cat $<`-devel" > $@;                                       \
+	fi
 
 #########
 
