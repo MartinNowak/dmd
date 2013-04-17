@@ -371,7 +371,17 @@ if (I32) assert(tysize[TYnptr] == 4);
 
     if (retmethod == RETstack)
     {
-        e->Ety = TYnptr;
+        // OSX IA-32 ABI does not return the hidden pointer in EAX
+        if (global.params.isOSX && !global.params.is64bit)
+        {
+            assert(ehidden);
+            e->Ety = TYvoid;
+            e = el_bin(OPcomma, TYnptr, e, ehidden);
+        }
+        else
+        {
+            e->Ety = TYnptr;
+        }
         e = el_una(OPind, tyret, e);
     }
 
