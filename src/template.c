@@ -5056,47 +5056,32 @@ void TemplateInstance::semantic(Scope *sc, Expressions *fargs)
     // in target_symbol_list(_idx) so we can remove it later if we encounter
     // an error.
 #if 1
-    int dosemantic3 = 0;
+    bool dosemantic3 = false;
     Dsymbols *target_symbol_list = NULL;
     size_t target_symbol_list_idx;
 
     if (!sc->parameterSpecialization)
-    {   Dsymbols *a;
-
+    {
         Scope *scx = sc;
-#if 0
         for (scx = sc; scx; scx = scx->enclosing)
-            if (scx->scopesym)
+            if (scx->scopesym && scx->scopesym->members)
                 break;
-#endif
+        assert(scx);
 
-        //if (scx && scx->scopesym) printf("3: scx is %s %s\n", scx->scopesym->kind(), scx->scopesym->toChars());
-        if (scx && scx->scopesym &&
-            scx->scopesym->members && !scx->scopesym->isTemplateMixin()
-#if 0 // removed because it bloated compile times
-            /* The problem is if A imports B, and B imports A, and both A
-             * and B instantiate the same template, does the compilation of A
-             * or the compilation of B do the actual instantiation?
-             *
-             * see bugzilla 2500.
-             */
-            && !scx->module->selfImports()
-#endif
-           )
+        Dsymbols *a = scx->scopesym->members;
+        // !!!HACK!!!
+        // This is needed for `template foo(arg = Bug!int) {}` where
+        // the scope for Bug!int is the module of foo but foo!() is
+        // instantiated in another module. In that case we use
+        // importedFrom so that the instantiation is added to an
+        // object file and we might have to run semantic3.
+        if (Module *m = scx->scopesym->isModule())
         {
-            //printf("\t1: adding to %s %s\n", scx->scopesym->kind(), scx->scopesym->toChars());
-            a = scx->scopesym->members;
-        }
-        else
-        {
-            Module *m = (enclosing ? sc : tempdecl->scope)->module->importedFrom;
-            //printf("\t2: adding to module %s instead of module %s\n", m->toChars(), sc->module->toChars());
+            m = m->importedFrom;
             a = m->members;
-            if (m->semanticRun >= 3)
-            {
-                dosemantic3 = 1;
-            }
+            dosemantic3 = m->semanticRun >= 3;
         }
+
         for (size_t i = 0; 1; i++)
         {
             if (i == a->dim)
