@@ -2897,7 +2897,7 @@ void Lexer::initKeywords()
 {
     size_t nkeywords = sizeof(keywords) / sizeof(keywords[0]);
 
-    stringtable._init(6151);
+    stringtable._init(8192);
 
     cmtable_init();
 

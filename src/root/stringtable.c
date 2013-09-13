@@ -55,7 +55,7 @@ hash_t calcHash(const char *str, size_t len)
     }
 }
 
-#define PRINT_STATS 1
+#define PRINT_STATS 0
 
 #if PRINT_STATS
 static void printStringTableStats(StringEntry **buckets, size_t tabledim);
@@ -70,20 +70,21 @@ void StringValue::ctor(const char *p, size_t length)
 
 void StringTable::_init(size_t size)
 {
+    assert(size != 0 && !(size & size - 1)); // power of 2
     table = (void **)mem.calloc(size, sizeof(void *));
-    tabledim = size;
     count = 0;
+    tabledim = size;
 }
 
 StringTable::~StringTable()
 {
 #if PRINT_STATS
+    printf("~StringTable() count: %u\n", (unsigned)count);
     printStringTableStats((StringEntry **)table, tabledim);
 #endif
     // Zero out dangling pointers to help garbage collector.
     // Should zero out StringEntry's too.
-    for (size_t i = 0; i < count; i++)
-        table[i] = NULL;
+    ::memset(table, 0, tabledim * sizeof(table[0]));
 
     mem.free(table);
     table = NULL;
@@ -91,9 +92,8 @@ StringTable::~StringTable()
 
 struct StringEntry
 {
-    StringEntry *left;
-    StringEntry *right;
     hash_t hash;
+    StringEntry *next;
 
     StringValue value;
 
@@ -112,42 +112,25 @@ StringEntry *StringEntry::alloc(const char *s, size_t len)
 
 void **StringTable::search(const char *s, size_t len)
 {
-    hash_t hash;
-    unsigned u;
-    int cmp;
-    StringEntry **se;
-
     //printf("StringTable::search(%p,%d)\n",s,len);
-    hash = calcHash(s,len);
-    u = hash % tabledim;
-    se = (StringEntry **)&table[u];
+    const hash_t hash = calcHash(s,len);
+    const unsigned idx = hash & tabledim - 1;
+    StringEntry **se = (StringEntry **)&table[idx];
     //printf("\thash = %d, u = %d\n",hash,u);
     while (*se)
     {
-        cmp = (*se)->hash - hash;
-        if (cmp == 0)
-        {
-            cmp = (*se)->value.len() - len;
-            if (cmp == 0)
-            {
-                cmp = ::memcmp(s,(*se)->value.toDchars(),len);
-                if (cmp == 0)
-                    break;
-            }
-        }
-        if (cmp < 0)
-            se = &(*se)->left;
-        else
-            se = &(*se)->right;
+        if ((*se)->hash == hash && (*se)->value.len() == len &&
+                ::memcmp(s, (*se)->value.toDchars(), len) == 0)
+            break;
+        se = &(*se)->next;
     }
     //printf("\treturn %p, %p\n",se, (*se));
     return (void **)se;
 }
 
 StringValue *StringTable::lookup(const char *s, size_t len)
-{   StringEntry *se;
-
-    se = *(StringEntry **)search(s,len);
+{
+    StringEntry *se = *(StringEntry **)search(s,len);
     if (se)
         return &se->value;
     else
@@ -155,33 +138,60 @@ StringValue *StringTable::lookup(const char *s, size_t len)
 }
 
 StringValue *StringTable::update(const char *s, size_t len)
-{   StringEntry **pse;
-    StringEntry *se;
-
-    pse = (StringEntry **)search(s,len);
-    se = *pse;
+{
+    StringEntry **pse = (StringEntry **)search(s,len);
+    StringEntry *se = *pse;
     if (!se)                    // not in table: so create new entry
     {
         se = StringEntry::alloc(s, len);
         *pse = se;
+        if (++count > 2 * tabledim) grow();
     }
     return &se->value;
 }
 
 StringValue *StringTable::insert(const char *s, size_t len)
-{   StringEntry **pse;
-    StringEntry *se;
-
-    pse = (StringEntry **)search(s,len);
-    se = *pse;
+{
+    StringEntry **pse = (StringEntry **)search(s,len);
+    StringEntry *se = *pse;
     if (se)
         return NULL;            // error: already in table
     else
     {
         se = StringEntry::alloc(s, len);
         *pse = se;
+        if (++count > 2 * tabledim) grow();
     }
     return &se->value;
+}
+
+void StringTable::grow()
+{
+    const size_t odim = tabledim;
+    tabledim *= 4;
+    table = (void**)mem.realloc(table, tabledim * sizeof(void*));
+    memset(table + odim, 0, 3 * odim * sizeof(void*));
+
+    const size_t mask = tabledim - 1;
+    for (size_t idx = 0; idx < odim; ++idx)
+    {
+        StringEntry **pse = (StringEntry **)&table[idx];
+        while (*pse)
+        {
+            const size_t nidx = (*pse)->hash & mask;
+            if (nidx == idx)
+            {
+                pse = &(*pse)->next;
+            }
+            else
+            {
+                StringEntry *se = *pse;
+                *pse = se->next;
+                se->next = (StringEntry *)table[nidx];
+                *(StringEntry **)&table[nidx] = se;
+            }
+        }
+    }
 }
 
 #if PRINT_STATS
@@ -189,7 +199,10 @@ StringValue *StringTable::insert(const char *s, size_t len)
 
 static size_t nentries(StringEntry *se)
 {
-    return se ? 1 + nentries(se->left) + nentries(se->right) : 0;
+    size_t n = 0;
+    for (; se; se = se->next)
+        ++n;
+    return n;
 }
 
 static void printStringTableStats(StringEntry **table, size_t tabledim)
@@ -207,7 +220,7 @@ static void printStringTableStats(StringEntry **table, size_t tabledim)
     const float mean = (float)sum / tabledim;
     const float var = sqsum / tabledim - mean * mean;
     printf("==== stats StringTable ====\n", (unsigned long long)tabledim);
-    printf("tabledim %u nentries %u, mean %f, dev %f\n", (unsigned)tabledim, (unsigned)sum, mean, sqrt(var));
+    printf("tabledim %u nentries %u,  mean %f, dev %f\n", (unsigned)tabledim, (unsigned)sum, mean, sqrt(var));
     const float rel = 100.0f / sum;
     printf("==== histogram ====\n");
     printf("%10s | %10s | %15s | %15s\n", "length", "number", "% of entries", "accum % of entries");
