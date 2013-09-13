@@ -18,42 +18,51 @@
 #include "stringtable.h"
 
 // TODO: Merge with root.String
+#if defined __i386__ || defined __x86_64__ || defined  _M_IX86 || defined _M_X64
+/*
+ * This is the FNV-1a hashing algorithm, described here:
+ *   http://www.isthe.com/chongo/tech/comp/fnv/#FNV-1a
+ * It has been placed in the public domain.
+ */
 hash_t calcHash(const char *str, size_t len)
 {
-    hash_t hash = 0;
+    static const hash_t fnv_prime = sizeof(hash_t) == 4 ? 16777619UL : 1099511628211UL;
+    static const hash_t offset_basis = sizeof(hash_t) == 4 ? 2166136261UL : 14695981039346656037UL;
 
-    while (1)
+    const uint8_t *p = (const uint8_t *)str;
+    hash_t hash = offset_basis;
+    for (size_t i = 0; i < len; ++i)
     {
-        switch (len)
-        {
-            case 0:
-                return hash;
-
-            case 1:
-                hash *= 37;
-                hash += *(const uint8_t *)str;
-                return hash;
-
-            case 2:
-                hash *= 37;
-                hash += *(const uint16_t *)str;
-                return hash;
-
-            case 3:
-                hash *= 37;
-                hash += (*(const uint16_t *)str << 8) +
-                        ((const uint8_t *)str)[2];
-                return hash;
-
-            default:
-                hash *= 37;
-                hash += *(const uint32_t *)str;
-                str += 4;
-                len -= 4;
-                break;
-        }
+        hash ^= p[i];
+        hash *= fnv_prime;
     }
+    return hash;
 }
+#else
+/*
+ * This is the One-at-a-Time hash algorithm, described here:
+ *   http://www.burtleburtle.net/bob/hash/doobs.html
+ * It has been placed in the public domain.
+ *
+ * It's faster on architectures where multiplication is
+ * expensive.
+ */
+uint32_t calcHash(const char *str, size_t len)
+{
+    uint32_t hash = 0;
+    const uint8_t *p = (const uint8_t *)str;
+    for (size_t i = 0; i < len; ++i)
+    {
+        hash += p[i];
+        hash += (hash << 10);
+        hash ^= (hash >> 6);
+    }
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}
+#endif
 
 #define PRINT_STATS 0
 
