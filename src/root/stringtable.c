@@ -55,6 +55,12 @@ hash_t calcHash(const char *str, size_t len)
     }
 }
 
+#define PRINT_STATS 1
+
+#if PRINT_STATS
+static void printStringTableStats(StringEntry **buckets, size_t tabledim);
+#endif
+
 void StringValue::ctor(const char *p, size_t length)
 {
     this->length = length;
@@ -71,6 +77,9 @@ void StringTable::_init(size_t size)
 
 StringTable::~StringTable()
 {
+#if PRINT_STATS
+    printStringTableStats((StringEntry **)table, tabledim);
+#endif
     // Zero out dangling pointers to help garbage collector.
     // Should zero out StringEntry's too.
     for (size_t i = 0; i < count; i++)
@@ -174,3 +183,40 @@ StringValue *StringTable::insert(const char *s, size_t len)
     }
     return &se->value;
 }
+
+#if PRINT_STATS
+#include <math.h> // sqrt
+
+static size_t nentries(StringEntry *se)
+{
+    return se ? 1 + nentries(se->left) + nentries(se->right) : 0;
+}
+
+static void printStringTableStats(StringEntry **table, size_t tabledim)
+{
+    size_t hist[16] = {0};
+    size_t sum = 0;
+    float sqsum = 0;
+    for (size_t i = 0; i < tabledim; ++i)
+    {
+        const size_t n = nentries((StringEntry *)table[i]);
+        ++hist[n < 16 ? n : 15];
+        sum += n;
+        sqsum += (float)n * (float)n;
+    }
+    const float mean = (float)sum / tabledim;
+    const float var = sqsum / tabledim - mean * mean;
+    printf("==== stats StringTable ====\n", (unsigned long long)tabledim);
+    printf("tabledim %u nentries %u, mean %f, dev %f\n", (unsigned)tabledim, (unsigned)sum, mean, sqrt(var));
+    const float rel = 100.0f / sum;
+    printf("==== histogram ====\n");
+    printf("%10s | %10s | %15s | %15s\n", "length", "number", "% of entries", "accum % of entries");
+    size_t acc = 0;
+    for (size_t i = 0; i < 16; ++i)
+    {
+        acc += hist[i] * i;
+        printf("%10u | %10llu | %15f | %15f\n", (unsigned)i, (unsigned long long)hist[i], hist[i] * i * rel, acc * rel);
+    }
+    printf("~~~~ hist StringTable<%llu> ~~~~\n", (unsigned long long)tabledim);
+}
+#endif
