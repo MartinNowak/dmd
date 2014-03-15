@@ -3112,15 +3112,15 @@ STATIC code * funccall(elem *e,unsigned numpara,unsigned numalign,regm_t *pretre
 #else
         assert(!I16 || (e11ty == TYnptr));
 #endif
-        c = cat(c, load_localgot());
-#if TARGET_LINUX || TARGET_FREEBSD || TARGET_OPENBSD || TARGET_SOLARIS
-        if (config.flags3 & CFG3pic && I32)
-            keepmsk |= mBX;
-#endif
-
         /* Mask of registers destroyed by the function call
          */
         regm_t desmsk = (mBP | ALLREGS | mES | XMMREGS) & ~fregsaved;
+#if TARGET_LINUX || TARGET_FREEBSD || TARGET_OPENBSD || TARGET_SOLARIS
+        /* When the called function is an interface thunk it might destroy EBX, see Bugzilla 10462.
+         */
+        if (I32)
+            desmsk |= mBX;
+#endif
 
         /* if we can't use loadea()     */
         if ((EOP(e11) || e11->Eoper == OPconst) &&
