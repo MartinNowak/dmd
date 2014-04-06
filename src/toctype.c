@@ -59,7 +59,8 @@ public:
 
     void visit(TypeAArray *t)
     {
-        t->ctype = type_assoc_array(Type_toCtype(t->index), Type_toCtype(t->next));
+        assert(0);
+        t->ctype = NULL;
     }
 
     void visit(TypePointer *t)

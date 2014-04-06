@@ -213,6 +213,7 @@ public:
     static ClassDeclaration *typeinfoshared;
     static ClassDeclaration *typeinfowild;
 
+    static TemplateDeclaration *associativearray;
     static TemplateDeclaration *rtinfo;
 
     static Type *basic[TMAX];
@@ -542,9 +543,6 @@ public:
     int hasPointers();
     MATCH implicitConvTo(Type *to);
     MATCH constConv(Type *to);
-
-    // Back end
-    Symbol *aaGetSymbol(const char *func, int flags);
 
     void accept(Visitor *v) { v->visit(this); }
 };

@@ -4152,12 +4152,53 @@ Expression *AssocArrayLiteralExp::semantic(Scope *sc)
 
     type = new TypeAArray(tvalue, tkey);
     type = type->semantic(loc, sc);
+    if (type == Type::terror)
+        return new ErrorExp();
+    if (type->ty != Tstruct)
+    {
+        error("AssociativeArray!(%s, %s) is not a struct, check druntime.",
+              tkey->toChars(), tvalue->toChars());
+        return new ErrorExp();
+    }
+
+    // Check nested pair type
+    Expression *epair = type->dotExp(sc, this, Lexer::idPool("Pair"), 0)->semantic(sc);
+    if (epair->op != TOKtype || epair->type->ty != Tstruct)
+    {
+        error("%s is missing nested Pair struct, check druntime.", type->toChars());
+        return new ErrorExp();
+    }
 
     semanticTypeInfo(sc, type);
 
-    return this;
+    // call constructor
+    Expression *eresult = new CallExp(loc, new TypeExp(loc, type), toPairs(sc));
+    return eresult->semantic(sc);
 }
 
+Expressions *AssocArrayLiteralExp::toPairs(Scope *sc)
+{
+    assert(type);
+
+    Expression *epair = type->dotExp(sc, this, Lexer::idPool("Pair"), 0)->semantic(sc);
+    TypeStruct *tpair = (TypeStruct *)epair->type;
+
+    // Convert keys and values to Pair literals
+    Expressions *pairs = new Expressions;
+    pairs->setDim(keys->dim);
+
+    for (size_t i = 0; i < keys->dim; ++i)
+    {
+        Expressions *einit = new Expressions();
+        einit->setDim(2);
+        (*einit)[0] = (*keys)[i];
+        (*einit)[1] = (*values)[i];
+        Expression *e = new StructLiteralExp(loc, tpair->sym, einit, tpair);
+        (*pairs)[i] = e->semantic(sc);
+    }
+
+    return pairs;
+}
 
 int AssocArrayLiteralExp::isBool(int result)
 {
@@ -10559,15 +10600,7 @@ Expression *IndexExp::semantic(Scope *sc)
 
         case Taarray:
         {
-            TypeAArray *taa = (TypeAArray *)t1;
-            /* We can skip the implicit conversion if they differ only by
-             * constness (Bugzilla 2684, see also bug 2954b)
-             */
-            if (!arrayTypeCompatibleWithoutCasting(e2->loc, e2->type, taa->index))
-            {
-                e2 = e2->implicitCastTo(sc, taa->index);        // type checking
-            }
-            type = taa->next;
+            assert(0);
             break;
         }
 

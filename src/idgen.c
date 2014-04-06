@@ -63,6 +63,7 @@ Msgtable msgtable[] =
     { "typeinfo" },
     { "outer" },
     { "Exception" },
+    { "AssociativeArray" },
     { "RTInfo" },
     { "Throwable" },
     { "Error" },

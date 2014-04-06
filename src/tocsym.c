@@ -656,57 +656,6 @@ Symbol *Module::toModuleArray()
     return marray;
 }
 
-/********************************************
- * Determine the right symbol to look up
- * an associative array element.
- * Input:
- *      flags   0       don't add value signature
- *              1       add value signature
- */
-
-Symbol *TypeAArray::aaGetSymbol(const char *func, int flags)
-{
-#ifdef DEBUG
-        assert((flags & ~1) == 0);
-#endif
-
-        // Dumb linear symbol table - should use associative array!
-        static Symbols *sarray = NULL;
-
-        //printf("aaGetSymbol(func = '%s', flags = %d, key = %p)\n", func, flags, key);
-        char *id = (char *)alloca(3 + strlen(func) + 1);
-        sprintf(id, "_aa%s", func);
-        if (!sarray)
-            sarray = Symbols_create();
-
-        // See if symbol is already in sarray
-        for (size_t i = 0; i < sarray->dim; i++)
-        {   Symbol *s = (*sarray)[i];
-            if (strcmp(id, s->Sident) == 0)
-            {
-#ifdef DEBUG
-                assert(s);
-#endif
-                return s;                       // use existing Symbol
-            }
-        }
-
-        // Create new Symbol
-
-        Symbol *s = symbol_calloc(id);
-        slist_add(s);
-        s->Sclass = SCextern;
-        s->Ssymnum = -1;
-        symbol_func(s);
-
-        type *t = type_function(TYnfunc, NULL, 0, false, Type_toCtype(next));
-        t->Tmangle = mTYman_c;
-        s->Stype = t;
-
-        sarray->push(s);                        // remember it
-        return s;
-}
-
 /*****************************************************/
 /*                   CTFE stuff                      */
 /*****************************************************/

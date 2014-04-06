@@ -2196,18 +2196,8 @@ elem *toElem(Expression *e, IRState *irs)
             }
             else if (t1->ty == Taarray && t2->ty == Taarray)
             {
-                TypeAArray *taa = (TypeAArray *)t1;
-                Symbol *s = taa->aaGetSymbol("Equal", 0);
-                elem *ti = taa->getTypeInfo(NULL)->toElem(irs);
-                elem *ea1 = ee->e1->toElem(irs);
-                elem *ea2 = ee->e2->toElem(irs);
-                // aaEqual(ti, e1, e2)
-                elem *ep = el_params(ea2, ea1, ti, NULL);
-                e = el_bin(OPcall, TYnptr, el_var(s), ep);
-                if (ee->op == TOKnotequal)
-                    e = el_bin(OPxor, TYint, e, el_long(TYint, 1));
-                el_setLoc(e, ee->loc);
-                result = e;
+                assert(0);
+                result = NULL;
                 return;
             }
             else
@@ -2269,19 +2259,8 @@ elem *toElem(Expression *e, IRState *irs)
 
         void visit(InExp *ie)
         {
-            elem *key = ie->e1->toElem(irs);
-            elem *aa = ie->e2->toElem(irs);
-            TypeAArray *taa = (TypeAArray *)ie->e2->type->toBasetype();
-
-            // aaInX(aa, keyti, key);
-            key = addressElem(key, ie->e1->type);
-            Symbol *s = taa->aaGetSymbol("InX", 0);
-            elem *keyti = taa->index->getInternalTypeInfo(NULL)->toElem(irs);
-            elem *ep = el_params(key, keyti, aa, NULL);
-            elem *e = el_bin(OPcall, totym(ie->type), el_var(s), ep);
-
-            el_setLoc(e, ie->loc);
-            result = e;
+            assert(0);
+            result = NULL;
         }
 
         /***************************************
@@ -2289,20 +2268,8 @@ elem *toElem(Expression *e, IRState *irs)
 
         void visit(RemoveExp *re)
         {
-            Type *tb = re->e1->type->toBasetype();
-            assert(tb->ty == Taarray);
-            TypeAArray *taa = (TypeAArray *)tb;
-            elem *ea = re->e1->toElem(irs);
-            elem *ekey = re->e2->toElem(irs);
-
-            ekey = addressElem(ekey, re->e1->type);
-            Symbol *s = taa->aaGetSymbol("DelX", 0);
-            elem *keyti = taa->index->getInternalTypeInfo(NULL)->toElem(irs);
-            elem *ep = el_params(ekey, keyti, ea, NULL);
-            elem *e = el_bin(OPcall, TYnptr, el_var(s), ep);
-
-            el_setLoc(e, re->loc);
-            result = e;
+            assert(0);
+            result = NULL;
         }
 
         /***************************************
@@ -4463,54 +4430,7 @@ elem *toElem(Expression *e, IRState *irs)
             Type *t1 = ie->e1->type->toBasetype();
             if (t1->ty == Taarray)
             {
-                // set to:
-                //      *aaGetX(aa, keyti, valuesize, &key);
-
-                TypeAArray *taa = (TypeAArray *)t1;
-                unsigned vsize = taa->next->size();
-
-                // n2 becomes the index, also known as the key
-                elem *n2 = ie->e2->toElem(irs);
-
-                /* Turn n2 into a pointer to the index.  If it's an lvalue,
-                 * take the address of it. If not, copy it to a temp and
-                 * take the address of that.
-                 */
-                n2 = addressElem(n2, taa->index);
-
-                elem *valuesize = el_long(TYsize_t, vsize);
-                //printf("valuesize: "); elem_print(valuesize);
-                Symbol *s;
-                if (ie->modifiable)
-                {
-                    n1 = el_una(OPaddr, TYnptr, n1);
-                    s = taa->aaGetSymbol("GetX", 1);
-                }
-                else
-                {
-                    s = taa->aaGetSymbol("GetRvalueX", 1);
-                }
-                //printf("taa->index = %s\n", taa->index->toChars());
-                elem* keyti = taa->index->getInternalTypeInfo(NULL)->toElem(irs);
-                //keyti = taa->index->getTypeInfo(NULL)->toElem(irs);
-                //printf("keyti:\n");
-                //elem_print(keyti);
-                elem* ep = el_params(n2, valuesize, keyti, n1, NULL);
-                e = el_bin(OPcall, TYnptr, el_var(s), ep);
-                if (irs->arrayBoundsCheck())
-                {
-                    elem *n = el_same(&e);
-
-                    // Construct: ((e || ModuleArray(line)), n)
-                    Symbol *sassert = irs->blx->module->toModuleArray();
-                    elem *ea = el_bin(OPcall,TYvoid,el_var(sassert),
-                        el_long(TYint, ie->loc.linnum));
-                    e = el_bin(OPoror,TYvoid,e,ea);
-                    e = el_bin(OPcomma, TYnptr, e, n);
-                }
-                e = el_una(OPind, totym(ie->type), e);
-                if (tybasic(e->Ety) == TYstruct)
-                    e->ET = Type_toCtype(ie->type);
+                assert(0);
             }
             else
             {

@@ -1611,22 +1611,7 @@ bool inferApplyArgTypes(ForeachStatement *fes, Scope *sc, Dsymbol *&sapply)
 
         case Taarray:
         {
-            TypeAArray *taa = (TypeAArray *)tab;
-
-            if (fes->arguments->dim == 2)
-            {
-                if (!arg->type)
-                {
-                    arg->type = taa->index;     // key type
-                    arg->type = arg->type->addStorageClass(arg->storageClass);
-                }
-                arg = (*fes->arguments)[1];
-            }
-            if (!arg->type)
-            {
-                arg->type = taa->next;          // value type
-                arg->type = arg->type->addStorageClass(arg->storageClass);
-            }
+            assert(0);
             break;
         }
 

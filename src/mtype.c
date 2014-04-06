@@ -76,6 +76,7 @@ ClassDeclaration *Type::typeinfoinvariant;
 ClassDeclaration *Type::typeinfoshared;
 ClassDeclaration *Type::typeinfowild;
 
+TemplateDeclaration *Type::associativearray;
 TemplateDeclaration *Type::rtinfo;
 
 Type *Type::tvoid;
@@ -4658,64 +4659,18 @@ Type *TypeAArray::semantic(Loc loc, Scope *sc)
         index = index->semantic(loc,sc);
     index = index->merge2();
 
-    if (index->nextOf() && !index->nextOf()->isImmutable())
-    {
-        index = index->constOf()->mutableOf();
-#if 0
-printf("index is %p %s\n", index, index->toChars());
-index->check();
-printf("index->mod = x%x\n", index->mod);
-printf("index->ito = x%x\n", index->ito);
-if (index->ito) {
-printf("index->ito->mod = x%x\n", index->ito->mod);
-printf("index->ito->ito = x%x\n", index->ito->ito);
-}
-#endif
-    }
-
-    switch (index->toBasetype()->ty)
-    {
-        case Tfunction:
-        case Tvoid:
-        case Tnone:
-        case Ttuple:
-            error(loc, "can't have associative array key of %s", index->toBasetype()->toChars());
-        case Terror:
-            return Type::terror;
-        case Tstruct:
-        {
-            /* AA's need opCmp. Issue error if not correctly set up.
-             */
-            StructDeclaration *sd = ((TypeStruct *)index->toBasetype())->sym;
-            if (sd->scope)
-                sd->semantic(NULL);
-            if (sd->xcmp == sd->xerrcmp)
-            {
-                error(loc, "associative array key type %s does not have 'const int opCmp(ref const %s)' member function",
-                        index->toBasetype()->toChars(), sd->toChars());
-                return Type::terror;
-            }
-            break;
-        }
-    }
     next = next->semantic(loc,sc)->merge2();
     transitive();
-
-    switch (next->toBasetype()->ty)
-    {
-        case Tfunction:
-        case Tvoid:
-        case Tnone:
-        case Ttuple:
-            error(loc, "can't have associative array of %s", next->toChars());
-        case Terror:
-            return Type::terror;
-    }
-    if (next->isscope())
-    {   error(loc, "cannot have array of scope %s", next->toChars());
-        return Type::terror;
-    }
-    return merge();
+    // instantiate AssociativeArray2!(Key, Value)
+    if (!Type::associativearray)
+        ObjectNotFound(Id::AssociativeArray);
+    Objects *tiargs = new Objects();
+    tiargs->push(index);
+    tiargs->push(next);
+    TemplateInstance *ti = new TemplateInstance(loc, Type::associativearray, tiargs);
+    ti->loc = loc;
+    TypeInstance *t = new TypeInstance(loc, ti);
+    return t->semantic(loc, sc);
 }
 
 void TypeAArray::resolve(Loc loc, Scope *sc, Expression **pe, Type **pt, Dsymbol **ps, bool intypeid)
@@ -4753,6 +4708,7 @@ Expression *TypeAArray::dotExp(Scope *sc, Expression *e, Identifier *ident, int 
 #if LOGDOTEXP
     printf("TypeAArray::dotExp(e = '%s', ident = '%s')\n", e->toChars(), ident->toChars());
 #endif
+    assert(0);
     if (ident == Id::length)
     {
         static FuncDeclaration *fd_aaLen = NULL;
@@ -4777,6 +4733,7 @@ Expression *TypeAArray::dotExp(Scope *sc, Expression *e, Identifier *ident, int 
 
 void TypeAArray::toDecoBuffer(OutBuffer *buf, int flag)
 {
+    assert(0);
     Type::toDecoBuffer(buf, flag);
     index->toDecoBuffer(buf);
     next->toDecoBuffer(buf, (flag & 0x100) ? 0 : mod);
@@ -4784,78 +4741,43 @@ void TypeAArray::toDecoBuffer(OutBuffer *buf, int flag)
 
 Expression *TypeAArray::defaultInit(Loc loc)
 {
-#if LOGDEFAULTINIT
-    printf("TypeAArray::defaultInit() '%s'\n", toChars());
-#endif
+    assert(0);
     return new NullExp(loc, this);
 }
 
 bool TypeAArray::isZeroInit(Loc loc)
 {
+    assert(0);
     return true;
 }
 
 bool TypeAArray::checkBoolean()
 {
+    assert(0);
     return true;
 }
 
 Expression *TypeAArray::toExpression()
 {
-    Expression *e = next->toExpression();
-    if (e)
-    {
-        Expression *ei = index->toExpression();
-        if (ei)
-        {
-            Expressions *arguments = new Expressions();
-            arguments->push(ei);
-            return new ArrayExp(loc, e, arguments);
-        }
-    }
+    assert(0);
     return NULL;
 }
 
 int TypeAArray::hasPointers()
 {
+    assert(0);
     return true;
 }
 
 MATCH TypeAArray::implicitConvTo(Type *to)
 {
-    //printf("TypeAArray::implicitConvTo(to = %s) this = %s\n", to->toChars(), toChars());
-    if (equals(to))
-        return MATCHexact;
-
-    if (to->ty == Taarray)
-    {   TypeAArray *ta = (TypeAArray *)to;
-
-        if (!MODimplicitConv(next->mod, ta->next->mod))
-            return MATCHnomatch;        // not const-compatible
-
-        if (!MODimplicitConv(index->mod, ta->index->mod))
-            return MATCHnomatch;        // not const-compatible
-
-        MATCH m = next->constConv(ta->next);
-        MATCH mi = index->constConv(ta->index);
-        if (m > MATCHnomatch && mi > MATCHnomatch)
-        {
-            return MODimplicitConv(mod, to->mod) ? MATCHconst : MATCHnomatch;
-        }
-    }
+    assert(0);
     return Type::implicitConvTo(to);
 }
 
 MATCH TypeAArray::constConv(Type *to)
 {
-    if (to->ty == Taarray)
-    {
-        TypeAArray *taa = (TypeAArray *)to;
-        MATCH mindex = index->constConv(taa->index);
-        MATCH mkey = next->constConv(taa->next);
-        // Pick the worst match
-        return mkey < mindex ? mkey : mindex;
-    }
+    assert(0);
     return Type::constConv(to);
 }
 

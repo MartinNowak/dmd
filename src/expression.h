@@ -478,6 +478,7 @@ public:
     bool equals(RootObject *o);
     Expression *syntaxCopy();
     Expression *semantic(Scope *sc);
+    Expressions *toPairs(Scope *sc);
     int isBool(int result);
     void toMangleBuffer(OutBuffer *buf);
 

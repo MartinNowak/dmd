@@ -6580,6 +6580,7 @@ Expression *scrubReturnValue(Loc loc, Expression *e)
     }
     if (e->op == TOKassocarrayliteral)
     {
+        assert(0);
         AssocArrayLiteralExp *aae = (AssocArrayLiteralExp *)e;
         aae->ownedByCtfe = false;
         if (!scrubArray(loc, aae->keys))

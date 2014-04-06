@@ -474,21 +474,7 @@ public:
 
     void visit(TypeInfoAssociativeArrayDeclaration *d)
     {
-        //printf("TypeInfoAssociativeArrayDeclaration::toDt()\n");
-        verifyStructSize(Type::typeinfoassociativearray, 4 * Target::ptrsize);
-
-        dtxoff(pdt, Type::typeinfoassociativearray->toVtblSymbol(), 0); // vtbl for TypeInfo_AssociativeArray
-        dtsize_t(pdt, 0);                        // monitor
-
-        assert(d->tinfo->ty == Taarray);
-
-        TypeAArray *tc = (TypeAArray *)d->tinfo;
-
-        tc->next->genTypeInfo(NULL);
-        dtxoff(pdt, toSymbol(tc->next->vtinfo), 0); // TypeInfo for array of type
-
-        tc->index->genTypeInfo(NULL);
-        dtxoff(pdt, toSymbol(tc->index->vtinfo), 0); // TypeInfo for array of type
+        assert(0);
     }
 
     void visit(TypeInfoFunctionDeclaration *d)
