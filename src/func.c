@@ -1732,6 +1732,17 @@ void FuncDeclaration::semantic3(Scope *sc)
                 Statement *s = new ReturnStatement(Loc(), e);
                 fbody = new CompoundStatement(Loc(), fbody, s);
                 assert(!returnLabel);
+
+                // Check for errors related to 'nothrow'.
+                int nothrowErrors = global.errors;
+                int blockexit = fbody->blockExit(this, f->isnothrow);
+                if (f->isnothrow && (global.errors != nothrowErrors) )
+                    ::error(loc, "%s '%s' is nothrow yet may throw", kind(), toPrettyChars());
+                if (flags & FUNCFLAGnothrowInprocess)
+                {
+                    if (type == f) f = (TypeFunction *)f->copy();
+                    f->isnothrow = !(blockexit & BEthrow);
+                }
             }
             else if (!hasReturnExp && type->nextOf()->ty != Tvoid)
                 error("has no return statement, but is expected to return a value of type %s", type->nextOf()->toChars());
@@ -5391,7 +5402,3 @@ void DeleteDeclaration::toCBuffer(OutBuffer *buf, HdrGenState *hgs)
     Parameter::argsToCBuffer(buf, hgs, arguments, 0);
     bodyToCBuffer(buf, hgs);
 }
-
-
-
-
