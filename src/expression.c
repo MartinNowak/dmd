@@ -4154,7 +4154,20 @@ Expression *AssocArrayLiteralExp::semantic(Scope *sc)
     type = type->semantic(loc, sc);
     if (type == Type::terror)
         return new ErrorExp();
-    if (type->ty != Tstruct)
+
+    semanticTypeInfo(sc, type);
+
+    // It would be nice to directly return the lowered expression
+    // here, but the compiler must still be able to recognize the
+    // literal for implicit conversions et.al.
+    return this;
+}
+
+Expression *AssocArrayLiteralExp::getLowered(Scope *sc)
+{
+    assert(type->ty == Taarray);
+    Type *timpl = ((TypeAArray *)type)->getLowered(sc);
+    if (timpl->ty != Tstruct)
     {
         error("AssociativeArray!(%s, %s) is not a struct, check druntime.",
               tkey->toChars(), tvalue->toChars());
@@ -4162,18 +4175,16 @@ Expression *AssocArrayLiteralExp::semantic(Scope *sc)
     }
 
     // Check nested pair type
-    Expression *epair = type->dotExp(sc, this, Lexer::idPool("Pair"), 0)->semantic(sc);
+    Expression *epair = timpl->dotExp(sc, this, Lexer::idPool("Pair"), 0)->semantic(sc);
     if (epair->op != TOKtype || epair->type->ty != Tstruct)
     {
-        error("%s is missing nested Pair struct, check druntime.", type->toChars());
+        error("%s is missing nested Pair struct, check druntime.", timpl->toChars());
         return new ErrorExp();
     }
 
-    semanticTypeInfo(sc, type);
-
     // call constructor
-    Expression *eresult = new CallExp(loc, new TypeExp(loc, type), toPairs(sc));
-    return eresult->semantic(sc);
+    lowered = new CallExp(loc, new TypeExp(loc, timpl), toPairs(sc));
+    return lowered = lowered->semantic(sc);
 }
 
 Expressions *AssocArrayLiteralExp::toPairs(Scope *sc)

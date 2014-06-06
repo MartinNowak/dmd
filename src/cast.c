@@ -35,6 +35,8 @@ bool isCommutative(Expression *e);
 
 Expression *implicitCastTo(Expression *e, Scope *sc, Type *t)
 {
+    //printf("implicitCastTo: %s => %s\n", e->toChars(), t->toChars());
+
     class ImplicitCastTo : public Visitor
     {
     public:
@@ -154,6 +156,8 @@ Expression *implicitCastTo(Expression *e, Scope *sc, Type *t)
 
 MATCH implicitConvTo(Expression *e, Type *t)
 {
+    //printf("implicitConvTo: %s => %s\n", e->toChars(), t->toChars());
+
     class ImplicitConvTo : public Visitor
     {
     public:
@@ -1313,6 +1317,7 @@ Type *toStaticArrayType(SliceExp *e)
 
 Expression *castTo(Expression *e, Scope *sc, Type *t)
 {
+    //printf("castTo: %s => %s\n", e->toChars(), t->toChars());
 
     class CastTo : public Visitor
     {
@@ -1969,8 +1974,9 @@ Expression *castTo(Expression *e, Scope *sc, Type *t)
                     ex = ex->castTo(sc, ((TypeAArray *)tb)->index);
                     (*ae->keys)[i] = ex;
                 }
-                ae->type = t;
-                result = ae;
+                // TODO: hack to rebuild lowering
+                ae->type = NULL;
+                result = ae->semantic(sc);
                 return;
             }
             visit((Expression *)e);
@@ -2172,6 +2178,8 @@ Expression *castTo(Expression *e, Scope *sc, Type *t)
 
 Expression *inferType(Expression *e, Type *t, int flag)
 {
+    //printf("inferType: %s => %s\n", e->toChars(), t->toChars());
+
     class InferType : public Visitor
     {
     public:
@@ -2215,6 +2223,7 @@ Expression *inferType(Expression *e, Type *t, int flag)
             Type *tb = t->toBasetype();
             if (tb->ty == Taarray)
             {
+                printf("inferType\n");
                 TypeAArray *taa = (TypeAArray *)tb;
                 Type *ti = taa->index;
                 Type *tv = taa->nextOf();

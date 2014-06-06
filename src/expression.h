@@ -472,12 +472,14 @@ class AssocArrayLiteralExp : public Expression
 public:
     Expressions *keys;
     Expressions *values;
+    Expression *lowered;
     bool ownedByCtfe;   // true = created in CTFE
 
     AssocArrayLiteralExp(Loc loc, Expressions *keys, Expressions *values);
     bool equals(RootObject *o);
     Expression *syntaxCopy();
     Expression *semantic(Scope *sc);
+    Expression *getLowered(Scope *sc);
     Expressions *toPairs(Scope *sc);
     int isBool(int result);
     void toMangleBuffer(OutBuffer *buf);

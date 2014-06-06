@@ -59,8 +59,8 @@ public:
 
     void visit(TypeAArray *t)
     {
-        assert(0);
-        t->ctype = NULL;
+        t->lowered->accept(this);
+        t->ctype = t->lowered->ctype;
     }
 
     void visit(TypePointer *t)

@@ -4621,9 +4621,9 @@ d_uns64 TypeAArray::size(Loc loc)
 
 Type *TypeAArray::semantic(Loc loc, Scope *sc)
 {
-    //printf("TypeAArray::semantic() %s index->ty = %d\n", toChars(), index->ty);
     if (deco)
         return this;
+    printf("TypeAArray::semantic() %s index->ty = %d\n", toChars(), index->ty);
 
     this->loc = loc;
     this->sc = sc;
@@ -4661,7 +4661,7 @@ Type *TypeAArray::semantic(Loc loc, Scope *sc)
 
     next = next->semantic(loc,sc)->merge2();
     transitive();
-    // instantiate AssociativeArray2!(Key, Value)
+    // instantiate AssociativeArray!(Key, Value)
     if (!Type::associativearray)
         ObjectNotFound(Id::AssociativeArray);
     Objects *tiargs = new Objects();
@@ -4670,7 +4670,10 @@ Type *TypeAArray::semantic(Loc loc, Scope *sc)
     TemplateInstance *ti = new TemplateInstance(loc, Type::associativearray, tiargs);
     ti->loc = loc;
     TypeInstance *t = new TypeInstance(loc, ti);
-    return t->semantic(loc, sc);
+    lowered = t->semantic(loc, sc);
+    if (lowered == Type::terror)
+        return Type::terror;
+    return this;
 }
 
 void TypeAArray::resolve(Loc loc, Scope *sc, Expression **pe, Type **pt, Dsymbol **ps, bool intypeid)
@@ -4708,32 +4711,11 @@ Expression *TypeAArray::dotExp(Scope *sc, Expression *e, Identifier *ident, int 
 #if LOGDOTEXP
     printf("TypeAArray::dotExp(e = '%s', ident = '%s')\n", e->toChars(), ident->toChars());
 #endif
-    assert(0);
-    if (ident == Id::length)
-    {
-        static FuncDeclaration *fd_aaLen = NULL;
-        if (fd_aaLen == NULL)
-        {
-            Parameters *fparams = new Parameters();
-            fparams->push(new Parameter(STCin, this, NULL, NULL));
-            fd_aaLen = FuncDeclaration::genCfunc(fparams, Type::tsize_t, Id::aaLen);
-            TypeFunction *tf = (TypeFunction *)fd_aaLen->type;
-            tf->purity = PUREconst;
-            tf->isnothrow = true;
-            tf->isnogc = false;
-        }
-        Expression *ev = new VarExp(e->loc, fd_aaLen);
-        e = new CallExp(e->loc, ev, e);
-        e->type = ((TypeFunction *)fd_aaLen->type)->next;
-    }
-    else
-        e = Type::dotExp(sc, e, ident, flag);
-    return e;
+    return lowered->dotExp(sc, e, ident, flag);
 }
 
 void TypeAArray::toDecoBuffer(OutBuffer *buf, int flag)
 {
-    assert(0);
     Type::toDecoBuffer(buf, flag);
     index->toDecoBuffer(buf);
     next->toDecoBuffer(buf, (flag & 0x100) ? 0 : mod);
@@ -4741,44 +4723,37 @@ void TypeAArray::toDecoBuffer(OutBuffer *buf, int flag)
 
 Expression *TypeAArray::defaultInit(Loc loc)
 {
-    assert(0);
-    return new NullExp(loc, this);
+    return lowered->defaultInit(loc);
 }
 
 bool TypeAArray::isZeroInit(Loc loc)
 {
-    assert(0);
-    return true;
+    return lowered->isZeroInit(loc);
 }
 
 bool TypeAArray::checkBoolean()
 {
-    assert(0);
-    return true;
+    return lowered->checkBoolean();
 }
 
 Expression *TypeAArray::toExpression()
 {
-    assert(0);
     return NULL;
 }
 
 int TypeAArray::hasPointers()
 {
-    assert(0);
-    return true;
+    return lowered->hasPointers();
 }
 
 MATCH TypeAArray::implicitConvTo(Type *to)
 {
-    assert(0);
-    return Type::implicitConvTo(to);
+    return lowered->implicitConvTo(to);
 }
 
 MATCH TypeAArray::constConv(Type *to)
 {
-    assert(0);
-    return Type::constConv(to);
+    return lowered->constConv(to);
 }
 
 /***************************** TypePointer *****************************/

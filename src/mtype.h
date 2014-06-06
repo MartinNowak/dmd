@@ -523,6 +523,7 @@ class TypeAArray : public TypeArray
 {
 public:
     Type *index;                // key type
+    Type *lowered;
     Loc loc;
     Scope *sc;
 
