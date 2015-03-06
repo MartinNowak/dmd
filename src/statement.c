@@ -4165,55 +4165,35 @@ Statement *SynchronizedStatement::semantic(Scope *sc)
         exp = checkGC(sc, exp);
         if (exp->op == TOKerror)
             goto Lbody;
-        ClassDeclaration *cd = exp->type->isClassHandle();
-        if (!cd)
-        {
-            error("can only synchronize on class objects, not '%s'", exp->type->toChars());
-            return new ErrorStatement();
-        }
-        else if (cd->isInterfaceDeclaration())
-        {   /* Cast the interface to an object, as the object has the monitor,
-             * not the interface.
-             */
-            if (!ClassDeclaration::object)
-            {
-                error("missing or corrupt object.d");
-                fatal();
-            }
-
-            Type *t = ClassDeclaration::object->type;
-            t = t->semantic(Loc(), sc)->toBasetype();
-            assert(t->ty == Tclass);
-
-            exp = new CastExp(loc, exp, t);
-            exp = exp->semantic(sc);
-        }
 
 #if 1
         /* Rewrite as:
          *  auto tmp = exp;
-         *  _d_monitorenter(tmp);
-         *  try { body } finally { _d_monitorexit(tmp); }
+         *  .object._synchronized_lock(tmp);
+         *  try { body } finally { .object._synchronized_unlock(tmp); }
          */
         Identifier *id = Identifier::generateId("__sync");
         ExpInitializer *ie = new ExpInitializer(loc, exp);
         VarDeclaration *tmp = new VarDeclaration(loc, exp->type, id, ie);
         tmp->storage_class |= STCtemp;
+        tmp->semantic(sc);
+        tmp->semantic2(sc);
 
         Statements *cs = new Statements();
         cs->push(new ExpStatement(loc, tmp));
 
-        Parameters* args = new Parameters;
-        args->push(new Parameter(0, ClassDeclaration::object->type, NULL, NULL));
-
-        FuncDeclaration *fdenter = FuncDeclaration::genCfunc(args, Type::tvoid, Id::monitorenter, STCnothrow);
-        Expression *e = new CallExp(loc, new VarExp(loc, fdenter), new VarExp(loc, tmp));
-        e->type = Type::tvoid;                  // do not run semantic on e
+        Expression *fenter = new IdentifierExp(loc, Id::empty);
+        fenter = new DotIdExp(loc, fenter, Id::object);
+        fenter = new DotIdExp(loc, fenter, Identifier::idPool("_synchronized_lock"));
+        Expression *e = new CallExp(loc, fenter, new VarExp(loc, tmp));
+        e = e->semantic(sc);
         cs->push(new ExpStatement(loc, e));
 
-        FuncDeclaration *fdexit = FuncDeclaration::genCfunc(args, Type::tvoid, Id::monitorexit, STCnothrow);
-        e = new CallExp(loc, new VarExp(loc, fdexit), new VarExp(loc, tmp));
-        e->type = Type::tvoid;                  // do not run semantic on e
+        Expression *fexit = new IdentifierExp(loc, Id::empty);
+        fexit = new DotIdExp(loc, fexit, Id::object);
+        fexit = new DotIdExp(loc, fexit, Identifier::idPool("_synchronized_unlock"));
+        e = new CallExp(loc, fexit, new VarExp(loc, tmp));
+        e = e->semantic(sc);
         Statement *s = new ExpStatement(loc, e);
         s = new TryFinallyStatement(loc, body, s);
         cs->push(s);
