@@ -453,10 +453,13 @@ int runLINK()
     // Build argv[]
     Strings argv;
 
-    const char *cc = getenv("CC");
-    if (!cc)
-        cc = "gcc";
-    argv.push(cc);
+    const char *cxx = getenv("CXX");
+    // fallback for compatibility with old dmd behavior
+    if (!cxx)
+        cxx = getenv("CC");
+    if (!cxx)
+        cxx = "c++";
+    argv.push(cxx);
     argv.insert(1, global.params.objfiles);
 
 #if __APPLE__
