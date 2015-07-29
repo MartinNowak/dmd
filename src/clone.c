@@ -820,21 +820,32 @@ FuncDeclaration *buildPostBlit(StructDeclaration *sd, Scope *sc)
 
         Expression *ex = new ThisExp(loc);
         ex = new DotVarExp(loc, ex, v, 0);
-        if (v->type->toBasetype()->ty == Tstruct)
+        switch (v->type->toBasetype()->ty)
         {
+        case Tstruct:
             // this.v.__postblit()
             ex = new DotVarExp(loc, ex, sdv->postblit, 0);
             ex = new CallExp(loc, ex);
-        }
-        else
-        {
-            // typeid(typeof(v)).postblit(cast(void*)&this.v);
-            Expression *ea = new AddrExp(loc, ex);
-            ea = new CastExp(loc, ea, Type::tvoid->pointerTo());
+            break;
 
-            Expression *et = new TypeidExp(loc, v->type);
-            et = new DotIdExp(loc, et, Identifier::idPool("postblit"));
-            ex = new CallExp(loc, et, ea);
+        case Tsarray:
+        {
+            // object._postblitRecurse(*cast(mutable)&this.v)
+            Expression *e = new IdentifierExp(loc, Id::empty);
+            e = new DotIdExp(loc, e, Id::object);
+            e = new DotIdExp(loc, e, Identifier::idPool("_postblitRecurse"));
+            e = e->semantic(sc);
+
+            ex = new AddrExp(loc, ex);
+            ex = new CastExp(loc, ex, new TypePointer(v->type->toBasetype()->mutableOf()));
+            ex = new PtrExp(loc, ex);
+            ex = new CallExp(loc, e, ex);
+        }
+        break;
+
+        default:
+            printf("ty: %d\n", v->type->toBasetype()->ty);
+            assert(0);
         }
         a->push(new ExpStatement(loc, ex)); // combine in forward order
 
@@ -845,21 +856,32 @@ FuncDeclaration *buildPostBlit(StructDeclaration *sd, Scope *sc)
             continue;
         ex = new ThisExp(loc);
         ex = new DotVarExp(loc, ex, v, 0);
-        if (v->type->toBasetype()->ty == Tstruct)
+        switch (v->type->toBasetype()->ty)
         {
+        case Tstruct:
             // this.v.__dtor()
             ex = new DotVarExp(loc, ex, sdv->dtor, 0);
             ex = new CallExp(loc, ex);
-        }
-        else
-        {
-            // Typeinfo.destroy(cast(void*)&this.v);
-            Expression *ea = new AddrExp(loc, ex);
-            ea = new CastExp(loc, ea, Type::tvoid->pointerTo());
+            break;
 
-            Expression *et = new TypeidExp(loc, v->type);
-            et = new DotIdExp(loc, et, Id::destroy);
-            ex = new CallExp(loc, et, ea);
+        case Tsarray:
+        {
+            // object._destructRecurse(*cast(mutable)&this.v)
+            Expression *e = new IdentifierExp(loc, Id::empty);
+            e = new DotIdExp(loc, e, Id::object);
+            e = new DotIdExp(loc, e, Identifier::idPool("_destructRecurse"));
+            e = e->semantic(sc);
+
+            ex = new AddrExp(loc, ex);
+            ex = new CastExp(loc, ex, new TypePointer(v->type->toBasetype()->mutableOf()));
+            ex = new PtrExp(loc, ex);
+            ex = new CallExp(loc, e, ex);
+        }
+        break;
+
+        default:
+            printf("ty: %d\n", v->type->toBasetype()->ty);
+            assert(0);
         }
         a->push(new OnScopeStatement(loc, TOKon_scope_failure, new ExpStatement(loc, ex)));
     }
@@ -957,21 +979,32 @@ FuncDeclaration *buildDtor(AggregateDeclaration *ad, Scope *sc)
 
         Expression *ex = new ThisExp(loc);
         ex = new DotVarExp(loc, ex, v, 0);
-        if (v->type->toBasetype()->ty == Tstruct)
+        switch (v->type->toBasetype()->ty)
         {
+        case Tstruct:
             // this.v.__dtor()
             ex = new DotVarExp(loc, ex, sdv->dtor, 0);
             ex = new CallExp(loc, ex);
-        }
-        else
-        {
-            // Typeinfo.destroy(cast(void*)&this.v);
-            Expression *ea = new AddrExp(loc, ex);
-            ea = new CastExp(loc, ea, Type::tvoid->pointerTo());
+            break;
 
-            Expression *et = new TypeidExp(loc, v->type);
-            et = new DotIdExp(loc, et, Id::destroy);
-            ex = new CallExp(loc, et, ea);
+        case Tsarray:
+        {
+            // object._destructRecurse(*cast(mutable)&this.v)
+            Expression *e = new IdentifierExp(loc, Id::empty);
+            e = new DotIdExp(loc, e, Id::object);
+            e = new DotIdExp(loc, e, Identifier::idPool("_destructRecurse"));
+            e = e->semantic(sc);
+
+            ex = new AddrExp(loc, ex);
+            ex = new CastExp(loc, ex, new TypePointer(v->type->toBasetype()->mutableOf()));
+            ex = new PtrExp(loc, ex);
+            ex = new CallExp(loc, e, ex);
+        }
+        break;
+
+        default:
+            printf("ty: %d\n", v->type->toBasetype()->ty);
+            assert(0);
         }
         e = Expression::combine(ex, e); // combine in reverse order
     }
