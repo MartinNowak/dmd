@@ -887,13 +887,14 @@ version (Windows)
                 end++;
                 if (end[-1] == '"')
                 {
-                    end++;
                     while (*end && *end != '"')
                     {
                         if (*end == '\\' && end[1])
                             end++;
                         end++;
                     }
+                    if (*end)
+                        end++; // skip closing quote
                 }
             }
             p = end;
