@@ -61,6 +61,7 @@ Symbol *toModuleUnittest(Module *m);
 Symbol *toModuleArray(Module *m);
 Symbol *toSymbolX(Dsymbol *ds, const char *prefix, int sclass, type *t, const char *suffix);
 static void genhelpers(Module *m);
+static void geninit();
 
 elem *eictor;
 symbol *ictorlocalgot;
@@ -256,6 +257,7 @@ void obj_start(char *srcfile)
 
 void obj_end(Library *library, File *objfile)
 {
+    geninit();
     const char *objfilename = objfile->name->toChars();
     objmod->term(objfilename);
     delete objmod;
@@ -488,6 +490,84 @@ void genObjFile(Module *m, bool multiobj)
         genhelpers(m);
 
     objmod->termfile();
+}
+
+/**
+ * Emit a init/fini function per object to initialize the current DSO,
+ * functions from multiple objects will get merged (COMDAT).
+ */
+static void geninit()
+{
+    type *t = type_function(TYnfunc, NULL, 0, false, tsvoid);
+    t->Tmangle = mTYman_d;
+
+    Symbol *sfunc = symbol_name("_d_dso_init", SCcomdat, t);
+    sfunc->Sflags |= SFLweak | SFLnodebug | SFLhidden;
+    slist_add(sfunc);
+
+    cstate.CSpsymtab = &sfunc->Sfunc->Flocsym;
+
+    /* Create an instance of DSO on the stack:
+     *
+     * typedef struct
+     * {
+     *     size_t                version;
+     *     DSORec               *dso_rec;
+     *     void   *minfo_beg, *minfo_end;
+     *     void       *deh_beg, *deh_end;
+     * } DSO;
+     */
+
+    Symbol *stmp = symbol_genauto(type_static_array(6, type_fake(TYnptr)));
+
+    size_t off = 0;
+    elem *einit = NULL;
+
+    // version the struct to make it API extensible
+    elem *e = el_ptr(stmp);
+    e = el_una(OPind, TYnptr, e);
+    e = el_bin(OPeq, TYnptr, e, el_long(TYnptr, 1)); // version = 1
+    einit = el_combine(einit, e);
+    off += Target::ptrsize;
+    // give the runtime a place to store a handle
+    Symbol *s = symbol_name("_d_dso_rec", SCcomdat, type_fake(TYnptr));
+    s->Sfl = FLudata;
+    s->Sflags |= SFLweak | SFLnodebug | SFLhidden;
+    dtnzeros(&s->Sdt, Target::ptrsize);
+    outdata(s);
+    e = el_ptr(stmp);
+    e = el_bin(OPadd, TYnptr, e, el_long(TYnptr, off));
+    e = el_una(OPind, TYnptr, e);
+    e = el_bin(OPeq, TYnptr, e, el_ptr(s)); // dso_rec = &_d_dso_rec
+    einit = el_combine(einit, e);
+    off += Target::ptrsize;
+
+    const char* brackets[4] = {"__start_minfo", "__stop_minfo", "__start_deh", "__stop_deh"};
+    for (size_t i = 0; i < sizeof(brackets) / sizeof(brackets[0]); ++i)
+    {
+        s = symbol_name(brackets[i], SCextern, type_fake(TYnptr));
+        s->Sfl = FLdata;
+        s->Sflags |= SFLnodebug | SFLhidden;
+        e = el_ptr(stmp);
+        e = el_bin(OPadd, TYnptr, e, el_long(TYnptr, off));
+        e = el_una(OPind, TYnptr, e);
+        e = el_bin(OPeq, TYnptr, e, el_ptr(s));
+        einit = el_combine(einit, e);
+        off += Target::ptrsize;
+    }
+
+    elem *efunc = el_var(rtlsym[RTLSYM_DDSOREGISTRY]);
+    e = el_bin(OPcall, TYvoid, efunc, el_param(el_ptr(stmp), NULL));
+    e = el_combine(einit, e);
+
+    block *b = block_calloc();
+    b->BC = BCret;
+    b->Belem = e;
+    sfunc->Sfunc->Fstartblock = b;
+    sfunc->Sflags |= rtlsym[RTLSYM_DDSOREGISTRY]->Sflags;
+    writefunc(sfunc);
+    objmod->staticctor(sfunc, 0, 3);
+    objmod->staticdtor(sfunc);
 }
 
 static void genhelpers(Module *m)

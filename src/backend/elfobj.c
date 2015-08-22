@@ -78,6 +78,11 @@ char *obj_mangle2(Symbol *s,char *dest);
  */
 #define REQUIRE_DSO_REGISTRY (DMDV2 && (TARGET_LINUX || TARGET_FREEBSD))
 
+static unsigned char visibility(symbol *s)
+{
+    return (s->Sflags & SFLhidden) ? STV_HIDDEN : STV_DEFAULT;
+}
+
 /***************************************************
  * Correspondence of relocation types
  *      386             32 bit in 64      64 in 64
@@ -1531,6 +1536,46 @@ void Obj::compiler()
 
 //#if NEWSTATICDTOR
 
+static void ctordtor(Symbol *s, bool ctor)
+{
+    const unsigned reltype = I64 ? R_X86_64_64 : R_386_32;
+
+    if (s->Sflags & SFLweak)
+    {
+        const char *name = ctor ? ".ctors." : ".dtors.";
+        const IDXSEC seg = ElfObj::getsegment(name, s->Sident, SHT_PROGBITS,
+                                              SHF_ALLOC | SHF_WRITE, NPTRSIZE);
+        assert(!SegData[seg]->SDbuf->size());
+        assert(s->Sseg);
+        Offset(seg) += ElfObj::writerel(seg, 0, reltype, s->Sxtrnnum, s->Soffset);
+
+        IDXSTR namidx = Obj::addstr(symtab_strings, ctor ? "_d_ctor_foobar" : "_d_dtor_foobar");
+        IDXSYM symidx = elf_addsym(namidx, 0, NPTRSIZE, STT_OBJECT,
+                                   STB_WEAK, MAP_SEG2SECIDX(seg));
+
+        //// combine section of symbol and ctor in a comdat group, so both get deduplicated
+        //const int groupseg = ElfObj::getsegment(".group.", s->Sident, SHT_GROUP, 0, 0);
+        //SegData[groupseg]->SDbuf->write32(0x1); // GRP_COMDAT
+        //SegData[groupseg]->SDbuf->write32(MAP_SEG2SECIDX(seg)); // add section to group
+        //SegData[groupseg]->SDbuf->write32(MAP_SEG2SECIDX(s->Sseg)); // add section to group
+        //
+        //// set group section infos
+        //Offset(groupseg) = SegData[groupseg]->SDbuf->size();
+        //Elf32_Shdr *p = MAP_SEG2SEC(groupseg);
+        //p->sh_link = SHN_SYMTAB;
+        //p->sh_info = s->Sxtrnnum; // set s as group symbol
+        //p->sh_entsize = sizeof(IDXSYM);
+        //p->sh_size = Offset(groupseg);
+    }
+    else
+    {
+        const char *name = ctor ? ".ctors" : ".dtors";
+        const IDXSEC seg = ElfObj::getsegment(name, NULL, SHT_PROGBITS,
+                                              SHF_ALLOC | SHF_WRITE, NPTRSIZE);
+        Offset(seg) += ElfObj::writerel(seg, Offset(seg), reltype, s->Sxtrnnum, s->Soffset);
+    }
+}
+
 /**************************************
  * Symbol is the function that calls the static constructors.
  * Put a pointer to it into a special segment that the startup code
@@ -1545,14 +1590,7 @@ void Obj::compiler()
 
 void Obj::staticctor(Symbol *s,int dtor,int none)
 {
-    // Static constructors and destructors
-    //dbg_printf("Obj::staticctor(%s) offset %x\n",s->Sident,s->Soffset);
-    //symbol_print(s);
-    const IDXSEC seg = s->Sseg =
-        ElfObj::getsegment(".ctors", NULL, SHT_PROGBITS, SHF_ALLOC|SHF_WRITE, 4);
-    const unsigned relinfo = I64 ? R_X86_64_64 : R_386_32;
-    const size_t sz = ElfObj::writerel(seg, SegData[seg]->SDoffset, relinfo, STI_TEXT, s->Soffset);
-    SegData[seg]->SDoffset += sz;
+    ctordtor(s, true);
 }
 
 /**************************************
@@ -1565,14 +1603,7 @@ void Obj::staticctor(Symbol *s,int dtor,int none)
 
 void Obj::staticdtor(Symbol *s)
 {
-    //dbg_printf("Obj::staticdtor(%s) offset %x\n",s->Sident,s->Soffset);
-    //symbol_print(s);
-    // Why does this sequence differ from staticctor, looks like a bug?
-    const IDXSEC seg =
-        ElfObj::getsegment(".dtors", NULL, SHT_PROGBITS, SHF_ALLOC|SHF_WRITE, 4);
-    const unsigned relinfo = I64 ? R_X86_64_64 : R_386_32;
-    const size_t sz = ElfObj::writerel(seg, SegData[seg]->SDoffset, relinfo, s->Sxtrnnum, s->Soffset);
-    SegData[seg]->SDoffset += sz;
+    ctordtor(s, false);
 }
 
 //#else
@@ -2175,13 +2206,13 @@ void Obj::pubdefsize(int seg, Symbol *s, targ_size_t offset, targ_size_t symsize
     if (tyfunc(s->ty()))
     {
         s->Sxtrnnum = elf_addsym(namidx, offset, symsize,
-            STT_FUNC, bind, MAP_SEG2SECIDX(seg));
+            STT_FUNC, bind, MAP_SEG2SECIDX(seg), visibility(s));
     }
     else
     {
         const unsigned typ = (s->ty() & mTYthread) ? STT_TLS : STT_OBJECT;
         s->Sxtrnnum = elf_addsym(namidx, offset, symsize,
-            typ, bind, MAP_SEG2SECIDX(seg));
+            typ, bind, MAP_SEG2SECIDX(seg), visibility(s));
     }
     fflush(NULL);
 }
@@ -2246,7 +2277,7 @@ int Obj::external(Symbol *s)
     }
 
     s->Sxtrnnum = elf_addsym(namidx, size, size, symtype,
-        /*(s->ty() & mTYweak) ? STB_WEAK : */STB_GLOBAL, sectype);
+        /*(s->ty() & mTYweak) ? STB_WEAK : */STB_GLOBAL, sectype, visibility(s));
     return s->Sxtrnnum;
 
 }
@@ -2294,7 +2325,7 @@ int Obj::common_block(Symbol *s,targ_size_t size,targ_size_t count)
     alignOffset(UDATA,size);
     IDXSYM symidx = elf_addsym(namidx, SegData[UDATA]->SDoffset, size*count,
                     (s->ty() & mTYthread) ? STT_TLS : STT_OBJECT,
-                    STB_WEAK, SHN_BSS);
+                    STB_WEAK, SHN_BSS, visibility(s));
     //dbg_printf("\tObj::common_block returning symidx %d\n",symidx);
     s->Sseg = UDATA;
     s->Sfl = FLudata;
@@ -3147,6 +3178,7 @@ void Obj::moduleinfo(Symbol *scc)
 
 static void obj_rtinit()
 {
+    return;
 #if TX86
     // section start/stop symbols are defined by the linker (http://www.airs.com/blog/archives/56)
     // make the symbols hidden so that each DSO gets it's own brackets

@@ -47,6 +47,7 @@ SYMBOL_MARS(MONITOR_PROLOG,  FLfunc,FREGSAVED,"_d_monitor_prolog",0,t) \
 SYMBOL_MARS(MONITOR_EPILOG,  FLfunc,FREGSAVED,"_d_monitor_epilog",0,t) \
 SYMBOL_MARS(DCOVER,          FLfunc,FREGSAVED,"_d_cover_register", 0, t) \
 SYMBOL_MARS(DCOVER2,         FLfunc,FREGSAVED,"_d_cover_register2", 0, t) \
+SYMBOL_MARS(DDSOREGISTRY,    FLfunc,FREGSAVED,"_d_dso_registry", 0, t) \
 SYMBOL_MARS(DASSERT,         FLfunc,FREGSAVED,"_d_assert", SFLexit, t) \
 SYMBOL_MARS(DASSERTM,        FLfunc,FREGSAVED,"_d_assertm", SFLexit, t) \
 SYMBOL_MARS(DASSERT_MSG,     FLfunc,FREGSAVED,"_d_assert_msg", SFLexit, t) \
@@ -188,7 +189,4 @@ SYMBOL_MARS(TRACEARRAYAPPENDCD,   FLfunc,FREGSAVED,"_d_arrayappendcdTrace", 0, t
 SYMBOL_MARS(TRACEARRAYAPPENDWD,   FLfunc,FREGSAVED,"_d_arrayappendwdTrace", 0, t) \
 SYMBOL_MARS(TRACEARRAYSETLENGTHT, FLfunc,FREGSAVED,"_d_arraysetlengthTTrace", 0, t) \
 SYMBOL_MARS(TRACEARRAYSETLENGTHIT,FLfunc,FREGSAVED,"_d_arraysetlengthiTTrace", 0, t) \
-SYMBOL_MARS(TRACEALLOCMEMORY,     FLfunc,FREGSAVED,"_d_allocmemoryTrace", 0, t) \
-
-
-
+SYMBOL_MARS(TRACEALLOCMEMORY,     FLfunc,FREGSAVED,"_d_allocmemoryTrace", 0, t)
