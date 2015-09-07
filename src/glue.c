@@ -353,7 +353,7 @@ void genObjFile(Module *m, bool multiobj)
 #else
                 Symbol *sref = symbol_generate(SCstatic, type_fake(TYnptr));
                 sref->Sfl = FLdata;
-                dtxoff(&sref->Sdt, s, 0, TYnptr);
+                dtxoff(sref->Sdt, s, 0, TYnptr);
                 outdata(sref);
 #endif
             }
@@ -371,7 +371,7 @@ void genObjFile(Module *m, bool multiobj)
         m->cov->Stype->Tcount++;
         m->cov->Sclass = SCstatic;
         m->cov->Sfl = FLdata;
-        dtnzeros(&m->cov->Sdt, 4 * m->numlines);
+        dtnzeros(m->cov->Sdt, 4 * m->numlines);
         outdata(m->cov);
         slist_add(m->cov);
 
@@ -395,7 +395,7 @@ void genObjFile(Module *m, bool multiobj)
         bcov->Stype->Tcount++;
         bcov->Sclass = SCstatic;
         bcov->Sfl = FLdata;
-        dtnbytes(&bcov->Sdt, (m->numlines + 32) / 32 * sizeof(*m->covb), (char *)m->covb);
+        dtnbytes(bcov->Sdt, (m->numlines + 32) / 32 * sizeof(*m->covb), (char *)m->covb);
         outdata(bcov);
 
         free(m->covb);

@@ -36,7 +36,7 @@
 // Back end
 #include        "dt.h"
 
-typedef Array<struct dt_t *> Dts;
+typedef Array<struct dt_ary> Dts;
 
 dt_t **Type_toDt(Type *t, dt_t **pdt);
 dt_t **toDtElem(TypeSArray *tsa, dt_t **pdt, Expression *e);
@@ -61,17 +61,12 @@ FuncDeclaration *search_toString(StructDeclaration *sd);
 
 /* ================================================================ */
 
-dt_t *Initializer_toDt(Initializer *init)
+dt_ary Initializer_toDt(Initializer *init)
 {
     class InitToDt : public Visitor
     {
     public:
-        dt_t *result;
-
-        InitToDt()
-            : result(NULL)
-        {
-        }
+        dt_ary result;
 
         void visit(Initializer *)
         {
@@ -83,7 +78,7 @@ dt_t *Initializer_toDt(Initializer *init)
             /* Void initializers are set to 0, just because we need something
              * to set them to in the static data segment.
              */
-            dtnzeros(&result, vi->type->size());
+            dtnzeros(result, vi->type->size());
         }
 
         void visit(StructInitializer *si)
@@ -108,20 +103,16 @@ dt_t *Initializer_toDt(Initializer *init)
 
             unsigned size = tn->size();
 
-            unsigned length = 0;
+            unsigned pos = 0;
             for (size_t i = 0; i < ai->index.dim; i++)
             {
-                Expression *idx = ai->index[i];
-                if (idx)
-                    length = idx->toInteger();
+                if (ai->index[i])
+                    pos = ai->index[i]->toInteger();
                 //printf("\tindex[%d] = %p, length = %u, dim = %u\n", i, idx, length, ai->dim);
-
-                assert(length < ai->dim);
-                dt_t *dt = Initializer_toDt(ai->value[i]);
-                if (dts[length])
-                    error(ai->loc, "duplicate initializations for index %d", length);
-                dts[length] = dt;
-                length++;
+                assert(pos < ai->dim);
+                if (dts[pos])
+                    error(ai->loc, "duplicate initializations for index %u", pos);
+                dts[pos++] = Initializer_toDt(ai->value[i]);
             }
 
             Expression *edefault = tb->nextOf()->defaultInit();
@@ -133,18 +124,18 @@ dt_t *Initializer_toDt(Initializer *init)
                 n *= tsa->dim->toInteger();
             }
 
-            dt_t *dtdefault = NULL;
+            dt_ary dtdefault;
 
-            dt_t **pdtend = &result;
+            const size_t base = result.length;
+            result.setLength(base + ai->dim);
             for (size_t i = 0; i < ai->dim; i++)
             {
-                dt_t *dt = dts[i];
-                if (dt)
-                    pdtend = dtcat(pdtend, dt);
+                if (dts[i].length)
+                    result.append)= dtcat(pdtend, dt);
                 else
                 {
-                    if (!dtdefault)
-                        Expression_toDt(edefault, &dtdefault);
+                    if (!dtdefault.length)
+                        dtdefault = Expression_toDt(edefault);
 
                     pdtend = dtrepeat(pdtend, dtdefault, n);
                 }

@@ -1,36 +1,32 @@
 
 //#pragma once
 #ifndef DT_H
-#define DT_H    1
+#define DT_H 1
 
 struct dt_t;
-struct Symbol;
-typedef unsigned        tym_t;          // data type big enough for type masks
+struct dt_ary;
+typedef struct Symbol symbol;
+typedef unsigned tym_t; // data type big enough for type masks
 
-void dt_free(dt_t *);
-void dt_term();
-
-dt_t **dtnbytes(dt_t **,unsigned,const char *);
-dt_t **dtabytes(dt_t **pdtend,tym_t ty, unsigned offset, unsigned size, const char *ptr);
-dt_t **dtabytes(dt_t **pdtend, unsigned offset, unsigned size, const char *ptr);
-dt_t **dtdword(dt_t **, int value);
-dt_t **dtsize_t(dt_t **, unsigned long long value);
-dt_t **dtnzeros(dt_t **pdtend,unsigned size);
-dt_t **dtxoff(dt_t **pdtend,Symbol *s,unsigned offset,tym_t ty);
-dt_t **dtxoff(dt_t **pdtend,Symbol *s,unsigned offset);
-dt_t **dtdtoff(dt_t **pdtend, dt_t *dt, unsigned offset);
-dt_t **dtcoff(dt_t **pdtend,unsigned offset);
-dt_t ** dtcat(dt_t **pdtend,dt_t *dt);
-dt_t ** dtrepeat(dt_t **pdtend, dt_t *dt, size_t count);
+void dt2common(dt_ary &ary);
+void init_common(symbol *s);
+void dt_optimize(dt_ary &ary);
+bool dtpointers(const dt_ary &ary);
+unsigned dt_size(const dt_ary &ary);
+bool dtallzeros(const dt_ary &ary);
+void dtrepeat(dt_ary &ary, dt_ary &data, size_t count);
+void dtdtoff(dt_ary &ary, dt_ary &data, unsigned offset);
 void dtpatchoffset(dt_t *dt, unsigned offset);
-void dt_optimize(dt_t *dt);
-void dtsymsize(Symbol *);
-void init_common(Symbol *);
-unsigned dt_size(const dt_t *dtstart);
-dt_t **dtend(dt_t** pdt);
-bool dtallzeros(const dt_t *dt);
-bool dtpointers(const dt_t *dt);
-void dt2common(dt_t **pdt);
+void dtxoff(dt_ary &ary, symbol *s, unsigned offset);
+void dtxoff(dt_ary &ary, symbol *s, unsigned offset, tym_t ty);
+void dtcoff(dt_ary &ary, unsigned offset);
+void dtsize_t(dt_ary &ary, unsigned long long value);
+void dtdword(dt_ary &ary, int value);
+void dtabytes(dt_ary &ary, unsigned offset, unsigned size, const char *ptr);
+void dtabytes(dt_ary &ary, tym_t ty, unsigned offset, unsigned size,
+              const char *ptr);
+void dtnbytes(dt_ary &ary, unsigned size, const char *ptr);
+void dtsymsize(symbol *s);
+void dtnzeros(dt_ary &ary, unsigned size);
 
 #endif /* DT_H */
-

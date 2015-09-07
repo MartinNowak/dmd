@@ -552,25 +552,25 @@ public:
              */
             dt_t *dt = NULL;
             Symbol *si = symbol_generate(SCstatic,type_fake(TYdarray));
-            dtsize_t(&dt, numcases);
-            dtxoff(&dt, si, Target::ptrsize * 2, TYnptr);
+            dtsize_t(si->Sdt, numcases);
+            dtxoff(si->Sdt, si, Target::ptrsize * 2, TYnptr);
 
             for (size_t i = 0; i < numcases; i++)
             {   CaseStatement *cs = (*s->cases)[i];
 
                 if (cs->exp->op != TOKstring)
-                {   s->error("case '%s' is not a string", cs->exp->toChars()); // BUG: this should be an assert
+                {
+                    s->error("case '%s' is not a string", cs->exp->toChars()); // BUG: this should be an assert
                 }
                 else
                 {
                     StringExp *se = (StringExp *)(cs->exp);
-                    Symbol *si = toStringSymbol((char *)se->string, se->len, se->sz);
-                    dtsize_t(&dt, se->len);
-                    dtxoff(&dt, si, 0);
+                    Symbol *ss = toStringSymbol((char *)se->string, se->len, se->sz);
+                    dtsize_t(si->Sdt, se->len);
+                    dtxoff(si->Sdt, ss, 0);
                 }
             }
 
-            si->Sdt = dt;
             si->Sfl = FLdata;
             outdata(si);
 

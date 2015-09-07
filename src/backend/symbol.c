@@ -1079,8 +1079,12 @@ symbol * symbol_copy(symbol *s)
     memcpy(scopy,s,sizeof(symbol) - sizeof(s->Sident));
     scopy->Sl = scopy->Sr = scopy->Snext = NULL;
     scopy->Ssymnum = -1;
-    if (scopy->Sdt)
+    if (scopy->Sdt.length)
+    {
+        scopy->Sdt.length = 0;
+        scopy->Sdt.data = NULL;
         dtsymsize(scopy);
+    }
     if (scopy->Sflags & (SFLvalue | SFLdtorexp))
         scopy->Svalue = el_copytree(s->Svalue);
     t = scopy->Stype;

@@ -101,8 +101,8 @@ void outdata(symbol *s)
     // Data segment variables are always live on exit from a function
     s->Sflags |= SFLlivexit;
 
-    dt_t *dtstart = s->Sdt;
-    s->Sdt = NULL;                      // it will be free'd
+    dt_ary dts;
+    dts.swap(s->Sdt); // will be free'd
 #if SCPP && TARGET_WINDOS
     if (eecontext.EEcompile)
     {   s->Sfl = (s->ty() & mTYfar) ? FLfardata : FLextern;
@@ -114,8 +114,9 @@ void outdata(symbol *s)
     ty = s->ty();
     if (ty & mTYexport && config.wflags & WFexpdef && s->Sclass != SCstatic)
         objmod->export_symbol(s,0);        // export data definition
-    for (dt_t *dt = dtstart; dt; dt = dt->DTnext)
+    for (size_t i = 0; i < dts.length; ++i)
     {
+        dt_t *dt = &dts[i];
         //printf("\tdt = %p, dt = %d\n",dt,dt->dt);
         switch (dt->dt)
         {   case DT_abytes:
@@ -1466,4 +1467,3 @@ void Srcpos::print(const char *func)
 
 
 #endif /* !SPP */
-

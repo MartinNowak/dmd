@@ -176,7 +176,6 @@ struct Classsym;
 struct Nspacesym;
 struct Outbuffer;
 struct Aliassym;
-struct dt_t;
 typedef struct TYPE type;
 typedef struct Symbol symbol;
 typedef Symbol Funcsym;
@@ -1043,6 +1042,138 @@ typedef struct STRUCT
 #define struct_free(st) ((void)(st))
 
 /**********************************
+ * Data definitions
+ *      DTibytes        1..7 bytes
+ *      DTabytes        offset of bytes of data
+ *                      a { a data bytes }
+ *      DTnbytes        bytes of data
+ *                      a { a data bytes }
+ *                      a = offset
+ *      DTazeros        # of 0 bytes
+ *                      a
+ *      DTsymsize       same as DTazeros, but the type of the symbol gives
+ *                      the size
+ *      DTcommon        # of 0 bytes (in a common block)
+ *                      a
+ *      DTxoff          offset from symbol
+ *                      w a
+ *                      w = symbol number (pointer for CPP)
+ *                      a = offset
+ *      DTcoff          offset into code segment
+ */
+
+struct dt_t
+{
+#ifdef DEBUG
+    dt_t()
+    {
+        memset(this, 0xBE, sizeof(*this));
+    }
+#endif
+
+    char dt;                            // type (DTxxxx)
+    unsigned char Dty;                  // pointer type
+    unsigned char DTn;                  // DTibytes: number of bytes
+    union
+    {
+        struct                          // DTibytes
+        {
+            #define DTibytesMax (sizeof(char *) + sizeof(unsigned) + sizeof(int) + sizeof(targ_size_t))
+            char DTdata_[DTibytesMax];  // data
+            #define DTdata _DU._DI.DTdata_
+        }_DI;
+        targ_size_t DTazeros_;          // DTazeros,DTcommon,DTsymsize
+        #define DTazeros _DU.DTazeros_
+        struct                          // DTabytes
+        {
+            char *DTpbytes_;            // pointer to the bytes
+            #define DTpbytes _DU._DN.DTpbytes_
+            unsigned DTnbytes_;         // # of bytes
+            #define DTnbytes _DU._DN.DTnbytes_
+            int DTseg_;                 // segment it went into
+            #define DTseg _DU._DN.DTseg_
+            targ_size_t DTabytes_;              // offset of abytes for DTabytes
+            #define DTabytes _DU._DN.DTabytes_
+        }_DN;
+        struct                          // DTxoff
+        {
+            symbol *DTsym_;             // symbol pointer
+            #define DTsym _DU._DS.DTsym_
+            targ_size_t DToffset_;      // offset from symbol
+            #define DToffset _DU._DS.DToffset_
+        }_DS;
+    }_DU;
+};
+
+enum
+{
+    DT_abytes,
+    DT_azeros,  // 1
+    DT_xoff,
+    DT_nbytes,
+    DT_common,
+    DT_symsize,
+    DT_coff,
+    DT_ibytes, // 7
+};
+
+/**********************************
+ * Array of data definitions
+ */
+
+struct dt_ary
+{
+    dt_ary(size_t length=0, dt_t *data=NULL)
+        : length(length)
+        , data(data)
+    {}
+
+    ~dt_ary()
+    {
+        reset();
+    }
+
+    void reset();
+
+    dt_t& operator[](size_t idx)
+    {
+#ifdef DEBUG
+        assert(idx < dim);
+#endif
+        return data[idx];
+    }
+
+    void push(dt_t d)
+    {
+        data = (dt_t *)mem_realloc(data, (length + 1) * sizeof(dt_t));
+        data[length++] = d;
+    }
+
+    void setLength(size_t len)
+    {
+        if (len == length)
+            return;
+        length = len;
+        data = (dt_t *)mem_realloc(data, len * sizeof(dt_t));
+    }
+
+    void swap(dt_ary& other)
+    {
+        dt_ary tmp = dt_ary(length, data);
+        length = other.length;
+        data = other.data;
+        other = tmp;
+    }
+
+    size_t length;
+    dt_t *data;
+
+private:
+    // disable copy construction (no refcounting needed)
+    dt_ary(const dt_ary&);
+};
+
+/**********************************
  * Symbol Table
  */
 
@@ -1064,7 +1195,7 @@ struct Symbol
 
     Symbol *Sl,*Sr;             // left, right child
     Symbol *Snext;              // next in threaded list
-    dt_t *Sdt;                  // variables: initializer
+    dt_ary Sdt;                 // variables: initializer
     int Salignment;             // variables: alignment, 0 or -1 means default alignment
     int Salignsize();           // variables: return alignment
     type *Stype;                // type of Symbol
@@ -1536,75 +1667,6 @@ struct Declar
 };
 
 extern Declar gdeclar;
-
-/**********************************
- * Data definitions
- *      DTibytes        1..7 bytes
- *      DTabytes        offset of bytes of data
- *                      a { a data bytes }
- *      DTnbytes        bytes of data
- *                      a { a data bytes }
- *                      a = offset
- *      DTazeros        # of 0 bytes
- *                      a
- *      DTsymsize       same as DTazeros, but the type of the symbol gives
- *                      the size
- *      DTcommon        # of 0 bytes (in a common block)
- *                      a
- *      DTxoff          offset from symbol
- *                      w a
- *                      w = symbol number (pointer for CPP)
- *                      a = offset
- *      DTcoff          offset into code segment
- */
-
-struct dt_t
-{   dt_t *DTnext;                       // next in list
-    char dt;                            // type (DTxxxx)
-    unsigned char Dty;                  // pointer type
-    unsigned char DTn;                  // DTibytes: number of bytes
-    union
-    {
-        struct                          // DTibytes
-        {
-            #define DTibytesMax (sizeof(char *) + sizeof(unsigned) + sizeof(int) + sizeof(targ_size_t))
-            char DTdata_[DTibytesMax];  // data
-            #define DTdata _DU._DI.DTdata_
-        }_DI;
-        targ_size_t DTazeros_;          // DTazeros,DTcommon,DTsymsize
-        #define DTazeros _DU.DTazeros_
-        struct                          // DTabytes
-        {
-            char *DTpbytes_;            // pointer to the bytes
-            #define DTpbytes _DU._DN.DTpbytes_
-            unsigned DTnbytes_;         // # of bytes
-            #define DTnbytes _DU._DN.DTnbytes_
-            int DTseg_;                 // segment it went into
-            #define DTseg _DU._DN.DTseg_
-            targ_size_t DTabytes_;              // offset of abytes for DTabytes
-            #define DTabytes _DU._DN.DTabytes_
-        }_DN;
-        struct                          // DTxoff
-        {
-            symbol *DTsym_;             // symbol pointer
-            #define DTsym _DU._DS.DTsym_
-            targ_size_t DToffset_;      // offset from symbol
-            #define DToffset _DU._DS.DToffset_
-        }_DS;
-    }_DU;
-};
-
-enum
-{
-    DT_abytes,
-    DT_azeros,  // 1
-    DT_xoff,
-    DT_nbytes,
-    DT_common,
-    DT_symsize,
-    DT_coff,
-    DT_ibytes, // 7
-};
 
 // An efficient way to clear aligned memory
 #define MEMCLEAR(p,sz)                  \
