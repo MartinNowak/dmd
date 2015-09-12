@@ -301,7 +301,7 @@ FuncDeclaration *buildOpAssign(StructDeclaration *sd, Scope *sc)
 
     sd->members->push(fop);
     fop->addMember(sc, sd);
-    sd->hasIdentityAssign = true;        // temporary mark identity assignable
+    sd->hasIdentityAssign = true;
 
     unsigned errors = global.startGagging();    // Do not report errors, even if the
     Scope *sc2 = sc->push();
