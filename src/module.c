@@ -546,33 +546,29 @@ Module *Module::parse()
         static const utf8_t code_ArrayDtor[] =
             "void _ArrayDtor(T)(T[] a) { foreach_reverse (ref T e; a) e.__xdtor(); }\n";
 
-        static const utf8_t code_BitBlit[] =
-            "void _BitBlit(T)(ref T dst, ref T src) @trusted\n"
-            "{\n"
-            " static if (T.sizeof <= size_t.sizeof)\n"
-            "  *cast(ubyte[T.sizeof]*)&dst = *cast(ubyte[T.sizeof]*)&src;\n"
-            " else\n"
-            " {\n"
-            "  import core.stdc.string : memcpy;\n"
-            "  memcpy(&dst, &src, T.sizeof);\n"
-            " }\n"
-            "}\n"
-            ;
+        static const utf8_t code_BlitExp[] =
+            "void _BlitExp(T)(ref T dst, ref T src) @trusted;\n";
 
         static const utf8_t code_StructBitwiseAssign[] =
-            "void _StructBitwiseAssign(T)(ref T a, ref T b)\n"
+            "ref T _StructBitwiseAssign(T)(return ref T a, ref T b) @trusted\n"
             "{\n"
             " static if (__traits(hasMember, T, \"__xdtor\"))\n"
             " {\n"
             " T tmp = void;\n" // for a.dtor()
-            " _BitBlit(tmp, a);\n"
+            " _BlitExp(tmp, a);\n"
             " }\n"
-            " _BitBlit(a, b);\n" // no postblit b/c b is already a temporary copy
+            " _BlitExp(a, b);\n" // no postblit b/c b is already a temporary copy
+            " return a;\n"
             "}\n"
             ;
 
         static const utf8_t code_StructFieldwiseAssign[] =
-            "void _StructFieldwiseAssign(T)(ref T a, ref T b) { a.tupleof = b.tupleof; }\n";
+            "ref T _StructFieldwiseAssign(T)(return ref T a, auto ref T b) @trusted\n"
+            "{\n"
+            " a.tupleof = b.tupleof;\n"
+            " return a;\n"
+            "}\n"
+            ;
 
         static const utf8_t code_xopEquals[] =
             "bool _xopEquals(in void*, in void*) { throw new Error(\"TypeInfo.equals is not implemented\"); }\n";
