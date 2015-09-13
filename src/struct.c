@@ -875,8 +875,10 @@ LafterSizeok:
     dtor = buildDtor(this, sc2);
     postblit = buildPostBlit(this, sc2);
 
-    buildOpAssign(this, sc2);
-    buildOpEquals(this, sc2);
+    if (hasIdentityOpAssign(this, sc2))
+        hasIdentityAssign = true;
+    if (hasIdentityOpEquals(this, sc2))
+        hasIdentityEquals = true;
 
     xeq = buildXopEquals(this, sc2);
     xcmp = buildXopCmp(this, sc2);

@@ -58,9 +58,9 @@ enum StructPOD
 };
 
 FuncDeclaration *hasIdentityOpAssign(AggregateDeclaration *ad, Scope *sc);
-FuncDeclaration *buildOpAssign(StructDeclaration *sd, Scope *sc);
+FuncDeclaration *hasIdentityOpEquals(AggregateDeclaration *ad, Scope *sc);
+bool needOpAssign(StructDeclaration *sd);
 bool needOpEquals(StructDeclaration *sd);
-FuncDeclaration *buildOpEquals(StructDeclaration *sd, Scope *sc);
 FuncDeclaration *buildXopEquals(StructDeclaration *sd, Scope *sc);
 FuncDeclaration *buildXopCmp(StructDeclaration *sd, Scope *sc);
 FuncDeclaration *buildXtoHash(StructDeclaration *ad, Scope *sc);

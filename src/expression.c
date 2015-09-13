@@ -1350,6 +1350,42 @@ Expression *callCpCtor(Scope *sc, Expression *e)
     return e;
 }
 
+/**************************************
+ * If e2 is the same struct as sd, build an expression for struct identity assignment.
+ */
+static Expression *handleIdentityAssign(Scope *sc, StructDeclaration *sd, Expression *e1, Expression *e2)
+{
+    // handle identity assignment for structs w/o opAssign
+    Type *t2 = e2->type->toBasetype();
+    if (t2->ty != Tstruct || sd != ((TypeStruct *)t2)->sym ||
+        !needOpAssign(sd))
+        return NULL;
+
+    Loc loc = Loc(); // internal code
+    Expression *e;
+    // Rewrite as _StructBitwiseAssign(e1x, e2x)
+    if (sd->dtor || sd->postblit)
+    {
+        Identifier *id = Identifier::generateId("__assigntmp");
+        VarDeclaration *tmp = new VarDeclaration(loc, e1->type, id, new ExpInitializer(loc, e2));
+        tmp->storage_class |= STCtemp;
+        tmp->noscope = 1; // don't destroy tmp to save an additional postblit
+        Expression *de = new DeclarationExp(loc, tmp);
+        VarExp *ve = new VarExp(loc, tmp);
+
+        Expression *assign = new IdentifierExp(loc, Id::_StructBitwiseAssign);
+        e = new CallExp(loc, assign, e1, ve);
+        e = Expression::combine(de, e);
+    }
+    // Rewrite as _StructFieldwiseAssign(e1x, e2x)
+    else
+    {
+        Expression *assign = new IdentifierExp(loc, Id::_StructFieldwiseAssign);
+        e = new CallExp(loc, assign, e1, e2);
+    }
+    return e->semantic(sc);
+}
+
 /****************************************
  * Now that we know the exact type of the function we're calling,
  * the arguments[] need to be adjusted:
@@ -11454,6 +11490,8 @@ Expression *AssignExp::semantic(Scope *sc)
                 ae->e1 = ae->e1->optimize(WANTvalue);
                 ae->e2 = ev;
                 Expression *e = ae->op_overload(sc);
+                if (!e)
+                    e = handleIdentityAssign(sc, sd, ae->e1, ae->e2);
                 if (e)
                 {
                     Expression *ey = NULL;
@@ -11502,6 +11540,8 @@ Expression *AssignExp::semantic(Scope *sc)
             else
             {
                 Expression *e = op_overload(sc);
+                if (!e)
+                    e = handleIdentityAssign(sc, sd, e1x, e2x);
                 if (e)
                     return e;
             }

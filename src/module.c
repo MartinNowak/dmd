@@ -546,6 +546,34 @@ Module *Module::parse()
         static const utf8_t code_ArrayDtor[] =
             "void _ArrayDtor(T)(T[] a) { foreach_reverse (ref T e; a) e.__xdtor(); }\n";
 
+        static const utf8_t code_BitBlit[] =
+            "void _BitBlit(T)(ref T dst, ref T src) @trusted\n"
+            "{\n"
+            " static if (T.sizeof <= size_t.sizeof)\n"
+            "  *cast(ubyte[T.sizeof]*)&dst = *cast(ubyte[T.sizeof]*)&src;\n"
+            " else\n"
+            " {\n"
+            "  import core.stdc.string : memcpy;\n"
+            "  memcpy(&dst, &src, T.sizeof);\n"
+            " }\n"
+            "}\n"
+            ;
+
+        static const utf8_t code_StructBitwiseAssign[] =
+            "void _StructBitwiseAssign(T)(ref T a, ref T b)\n"
+            "{\n"
+            " static if (__traits(hasMember, T, \"__xdtor\"))\n"
+            " {\n"
+            " T tmp = void;\n" // for a.dtor()
+            " _BitBlit(tmp, a);\n"
+            " }\n"
+            " _BitBlit(a, b);\n" // no postblit b/c b is already a temporary copy
+            "}\n"
+            ;
+
+        static const utf8_t code_StructFieldwiseAssign[] =
+            "void _StructFieldwiseAssign(T)(ref T a, ref T b) { a.tupleof = b.tupleof; }\n";
+
         static const utf8_t code_xopEquals[] =
             "bool _xopEquals(in void*, in void*) { throw new Error(\"TypeInfo.equals is not implemented\"); }\n";
 
@@ -577,6 +605,21 @@ Module *Module::parse()
         }
         {
             Parser p(loc, this, code_ArrayDtor, strlen((const char *)code_ArrayDtor), 0);
+            p.nextToken();
+            members->append(p.parseDeclDefs(0));
+        }
+        {
+            Parser p(loc, this, code_BitBlit, strlen((const char *)code_BitBlit), 0);
+            p.nextToken();
+            members->append(p.parseDeclDefs(0));
+        }
+        {
+            Parser p(loc, this, code_StructBitwiseAssign, strlen((const char *)code_StructBitwiseAssign), 0);
+            p.nextToken();
+            members->append(p.parseDeclDefs(0));
+        }
+        {
+            Parser p(loc, this, code_StructFieldwiseAssign, strlen((const char *)code_StructFieldwiseAssign), 0);
             p.nextToken();
             members->append(p.parseDeclDefs(0));
         }
