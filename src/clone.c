@@ -310,7 +310,8 @@ FuncDeclaration *buildOpAssign(StructDeclaration *sd, Scope *sc)
 
     fop->semantic(sc2);
     fop->semantic2(sc2);
-    fop->semantic3(sc2);
+    /* Semantic3 is run in StructDeclaration::semantic3 to avoid
+       forward reference issues, see 15044. */
 
     sc2->pop();
     if (global.endGagging(errors))    // if errors happened
@@ -322,7 +323,7 @@ FuncDeclaration *buildOpAssign(StructDeclaration *sd, Scope *sc)
 
     //printf("-StructDeclaration::buildOpAssign() %s, errors = %d\n", sd->toChars(), (fop->storage_class & STCdisable) != 0);
 
-    return fop;
+    return sd->generatedOpAssign = fop;
 }
 
 /*******************************************

@@ -249,6 +249,31 @@ void AggregateDeclaration::semantic3(Scope *sc)
     sc2->structalign = STRUCTALIGN_DEFAULT;
     sc2->userAttribDecl = NULL;
 
+    if (sd && sd->generatedOpAssign)
+    {
+        FuncDeclaration *fop = sd->generatedOpAssign;
+        bool hasErrors = false;
+        if (sd->generatedOpAssign->semanticRun < PASSsemantic3)
+        {
+            unsigned errors = global.startGagging();
+            fop->semantic3(sc2);
+            hasErrors = global.endGagging(errors);
+        }
+        else if (fop->errors || fop->semantic3Errors)
+        {
+            // semantic3 might already be run by AssignExp op_overload, see compilable/test15044.d
+            hasErrors = true;
+        }
+
+        if (hasErrors)
+        {
+            // change to @disable opAssign
+            fop->storage_class |= STCdisable;
+            fop->fbody = NULL;  // remove fbody which contains the error
+            fop->errors = fop->semantic3Errors = 0; // clear errors
+        }
+    }
+
     for (size_t i = 0; i < members->dim; i++)
     {
         Dsymbol *s = (*members)[i];
