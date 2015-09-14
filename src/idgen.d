@@ -269,6 +269,7 @@ Msgtable[] msgtable =
     { "_ArrayDtor" },
     { "_StructBitwiseAssign" },
     { "_StructFieldwiseAssign" },
+    { "_BlitExp" },
 
     // For pragma's
     { "Pinline", "inline" },

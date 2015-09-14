@@ -8243,6 +8243,17 @@ Expression *CallExp::semantic(Scope *sc)
         return ce->semantic(sc);
     }
 
+    // handle intrinsics
+    if (e1->op == TOKidentifier)
+    {
+        if (((IdentifierExp *)e1)->ident == Id::_BlitExp)
+        {
+            assert(arguments->dim == 2);
+            BlitExp *be = new BlitExp(loc, (*arguments)[0], (*arguments)[1]);
+            return be->semantic(sc);
+        }
+    }
+
     if (e1->op == TOKdelegate)
     {
         DelegateExp *de = (DelegateExp *)e1;

@@ -546,8 +546,8 @@ Module *Module::parse()
         static const utf8_t code_ArrayDtor[] =
             "void _ArrayDtor(T)(T[] a) { foreach_reverse (ref T e; a) e.__xdtor(); }\n";
 
-        static const utf8_t code_BlitExp[] =
-            "void _BlitExp(T)(ref T dst, ref T src) @trusted;\n";
+        //static const utf8_t code_BlitExp[] =
+        //    "void _BlitExp(T)(ref T dst, ref T src) @trusted;\n";
 
         static const utf8_t code_StructBitwiseAssign[] =
             "ref T _StructBitwiseAssign(T)(return ref T a, ref T b) @trusted\n"
@@ -604,11 +604,11 @@ Module *Module::parse()
             p.nextToken();
             members->append(p.parseDeclDefs(0));
         }
-        {
-            Parser p(loc, this, code_BitBlit, strlen((const char *)code_BitBlit), 0);
-            p.nextToken();
-            members->append(p.parseDeclDefs(0));
-        }
+        //{
+        //    Parser p(loc, this, code_BitBlit, strlen((const char *)code_BitBlit), 0);
+        //    p.nextToken();
+        //    members->append(p.parseDeclDefs(0));
+        //}
         {
             Parser p(loc, this, code_StructBitwiseAssign, strlen((const char *)code_StructBitwiseAssign), 0);
             p.nextToken();
