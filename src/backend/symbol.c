@@ -2269,6 +2269,24 @@ void symbol_gendebuginfo()
 
 #endif
 
+/*************************************
+ * Reset Symbol so that it's now an "extern" to the next obj file being created.
+ */
+void symbol_reset(Symbol *s)
+{
+    s->Soffset = 0;
+    s->Sxtrnnum = 0;
+    s->Stypidx = 0;
+    s->Sflags &= ~(STRoutdef | SFLweak);
+    if (s->Sclass == SCglobal || s->Sclass == SCcomdat ||
+        s->Sfl == FLudata || s->Sclass == SCstatic)
+    {   s->Sclass = SCextern;
+        s->Sfl = FLextern;
+    }
+}
+
+#if SCPP
+
 /************************************
  * Add symbol to global slist, which are symbols we need to keep around
  * for next obj file to be created.
@@ -2291,21 +2309,9 @@ void slist_reset()
 {
     //printf("slist_reset()\n");
     for (size_t i = 0; i < slist_length; ++i)
-    {
-        Symbol *s = slist[i];
-
-        s->Soffset = 0;
-        s->Sxtrnnum = 0;
-        s->Stypidx = 0;
-        s->Sflags &= ~(STRoutdef | SFLweak);
-        if (s->Sclass == SCglobal || s->Sclass == SCcomdat ||
-            s->Sfl == FLudata || s->Sclass == SCstatic)
-        {   s->Sclass = SCextern;
-            s->Sfl = FLextern;
-        }
-    }
+        symbol_reset(slist[i]);
 }
 
-
+#endif
 
 #endif /* !SPP */

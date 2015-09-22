@@ -235,7 +235,6 @@ void obj_start(char *srcfile)
     //printf("obj_start()\n");
 
     rtlsym_reset();
-    slist_reset();
     clearStringTab();
 
 #if TARGET_WINDOS
@@ -373,7 +372,6 @@ void genObjFile(Module *m, bool multiobj)
         m->cov->Sfl = FLdata;
         dtnzeros(&m->cov->Sdt, 4 * m->numlines);
         outdata(m->cov);
-        slist_add(m->cov);
 
         m->covb = (unsigned *)calloc((m->numlines + 32) / 32, sizeof(*m->covb));
     }
@@ -388,7 +386,7 @@ void genObjFile(Module *m, bool multiobj)
     if (global.params.cov)
     {
         /* Generate
-         *      bit[numlines] __bcoverage;
+         *  private bit[numlines] __bcoverage;
          */
         Symbol *bcov = symbol_calloc("__bcoverage");
         bcov->Stype = type_fake(TYuint);
@@ -544,6 +542,7 @@ static void genhelpers(Module *m)
         ma->Sfl = 0;
         ma->Sflags |= getRtlsym(rt)->Sflags & SFLexit;
         writefunc(ma);
+        symbol_reset(ma);
     }
 }
 

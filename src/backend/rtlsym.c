@@ -86,15 +86,23 @@ void rtlsym_init()
  * .OBJ files from one compile.
  */
 
+static void tls_helper_reset()
+{
+    if (tls_get_addr_sym)
+        symbol_reset(tls_get_addr_sym);
+}
+
 #if MARS
 
 void rtlsym_reset()
 {
     clib_inited = 0;            // reset CLIB symbols, too
     for (size_t i = 0; i < RTLSYM_MAX; i++)
-    {   rtlsym[i]->Sxtrnnum = 0;
+    {
+        rtlsym[i]->Sxtrnnum = 0;
         rtlsym[i]->Stypidx = 0;
     }
+    tls_helper_reset();
 }
 
 #endif
@@ -104,6 +112,7 @@ void rtlsym_reset()
 
 void rtlsym_term()
 {
+    tls_helper_reset();
 }
 
 #endif

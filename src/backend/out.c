@@ -1466,4 +1466,3 @@ void Srcpos::print(const char *func)
 
 
 #endif /* !SPP */
-

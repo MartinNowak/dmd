@@ -84,8 +84,8 @@ void genModuleInfo(Module *m)
 
     //////////////////////////////////////////////
 
-    m->csym->Sclass = SCglobal;
-    m->csym->Sfl = FLdata;
+    msym->Sclass = SCglobal;
+    msym->Sfl = FLdata;
 
     dt_t *dt = NULL;
     ClassDeclarations aclasses;
@@ -203,13 +203,14 @@ void genModuleInfo(Module *m)
     }
 
     objc_Module_genmoduleinfo_classes();
-    m->csym->Sdt = dt;
-    out_readonly(m->csym);
-    outdata(m->csym);
+    msym->Sdt = dt;
+    out_readonly(msym);
+    outdata(msym);
 
     //////////////////////////////////////////////
 
     objmod->moduleinfo(msym);
+    symbol_reset(msym);
 }
 
 /* ================================================================== */
@@ -230,7 +231,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
         {
             bool multiobjsave = multiobj;
             multiobj = false;
-            ds->accept(this);
+            toObjFile(ds, multiobj);
             multiobj = multiobjsave;
         }
 
@@ -279,7 +280,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                 /* There might be static ctors in the members, and they cannot
                  * be put in separate obj files.
                  */
-                member->accept(this);
+                toObjFile(member, multiobj);
             }
 
             // Generate C symbols
@@ -295,6 +296,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
             ClassDeclaration_toDt(cd, &sinit->Sdt);
             out_readonly(sinit);
             outdata(sinit);
+            symbol_reset(sinit);
 
             //////////////////////////////////////////////
 
@@ -659,6 +661,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
             outdata(cd->vtblsym);
             if (cd->isExport())
                 objmod->export_symbol(cd->vtblsym,0);
+            symbol_reset(cd->vtblsym);
         }
 
         void visit(InterfaceDeclaration *id)
@@ -693,7 +696,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
 
             // Put out the TypeInfo
             genTypeInfo(id->type, NULL);
-            id->type->vtinfo->accept(this);
+            toObjFile(id->type->vtinfo, multiobj);
 
             //////////////////////////////////////////////
 
@@ -878,6 +881,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                 dt_optimize(sd->sinit->Sdt);
                 out_readonly(sd->sinit);    // put in read-only segment
                 outdata(sd->sinit);
+                symbol_reset(sd->sinit);
 
                 // Put out the members
                 for (size_t i = 0; i < sd->members->dim; i++)
@@ -886,15 +890,15 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                     /* There might be static ctors in the members, and they cannot
                      * be put in separate obj files.
                      */
-                    member->accept(this);
+                    toObjFile(member, multiobj);
                 }
 
                 if (sd->xeq && sd->xeq != StructDeclaration::xerreq)
-                    sd->xeq->accept(this);
+                    toObjFile(sd->xeq, multiobj);
                 if (sd->xcmp && sd->xcmp != StructDeclaration::xerrcmp)
-                    sd->xcmp->accept(this);
+                    toObjFile(sd->xcmp, multiobj);
                 if (sd->xhash)
-                    sd->xhash->accept(this);
+                    toObjFile(sd->xhash, multiobj);
             }
         }
 
@@ -1032,6 +1036,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                 ed->sinit->Sfl = FLdata;
                 Expression_toDt(tc->sym->defaultval, &ed->sinit->Sdt);
                 outdata(ed->sinit);
+                symbol_reset(ed->sinit);
             }
             ed->semanticRun = PASSobj;
         }
@@ -1082,7 +1087,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                 for (size_t i = 0; i < d->dim; i++)
                 {
                     Dsymbol *s = (*d)[i];
-                    s->accept(this);
+                    toObjFile(s, multiobj);
                 }
             }
         }
@@ -1152,7 +1157,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                     for (size_t i = 0; i < ti->members->dim; i++)
                     {
                         Dsymbol *s = (*ti->members)[i];
-                        s->accept(this);
+                        toObjFile(s, multiobj);
                     }
                 }
             }
@@ -1166,7 +1171,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                 for (size_t i = 0; i < tm->members->dim; i++)
                 {
                     Dsymbol *s = (*tm->members)[i];
-                    s->accept(this);
+                    toObjFile(s, multiobj);
                 }
             }
         }
@@ -1192,7 +1197,7 @@ void toObjFile(Dsymbol *ds, bool multiobj)
                     for (size_t i = 0; i < ns->members->dim; i++)
                     {
                         Dsymbol *s = (*ns->members)[i];
-                        s->accept(this);
+                        toObjFile(s, multiobj);
                     }
                 }
             }
@@ -1201,6 +1206,9 @@ void toObjFile(Dsymbol *ds, bool multiobj)
 
     ToObjFile v(multiobj);
     ds->accept(&v);
+    // reset symbol so it becomes an extern for any further reference
+    if (ds->csym)
+        symbol_reset(ds->csym);
 }
 
 /******************************************
