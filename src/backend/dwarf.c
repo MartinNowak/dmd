@@ -86,23 +86,23 @@ int dwarf_getsegment(const char *name, int align)
 #define RELaddr 0       // straight address
 #define RELrel  1       // relative to location to be fixed up
 
-void dwarf_addrel(int seg, targ_size_t offset, int targseg, targ_size_t val = 0)
+targ_size_t dwarf_addrel(int seg, targ_size_t offset, int targseg, targ_size_t val = 0)
 {
 #if ELFOBJ
-    ElfObj::addrel(seg, offset, I64 ? R_X86_64_32 : R_386_32, MAP_SEG2SYMIDX(targseg), val);
+    return ElfObj::addrel(seg, offset, I64 ? R_X86_64_32 : R_386_32, MAP_SEG2SYMIDX(targseg), val);
 #elif MACHOBJ
-    MachObj::addrel(seg, offset, NULL, targseg, RELaddr, val);
+    return MachObj::addrel(seg, offset, NULL, targseg, RELaddr, val);
 #else
     assert(0);
 #endif
 }
 
-void dwarf_addrel64(int seg, targ_size_t offset, int targseg, targ_size_t val)
+targ_size_t dwarf_addrel64(int seg, targ_size_t offset, int targseg, targ_size_t val)
 {
 #if ELFOBJ
-    ElfObj::addrel(seg, offset, R_X86_64_64, MAP_SEG2SYMIDX(targseg), val);
+    return ElfObj::addrel(seg, offset, R_X86_64_64, MAP_SEG2SYMIDX(targseg), val);
 #elif MACHOBJ
-    MachObj::addrel(seg, offset, NULL, targseg, RELaddr, val);
+    return MachObj::addrel(seg, offset, NULL, targseg, RELaddr, val);
 #else
     assert(0);
 #endif
@@ -112,20 +112,20 @@ void dwarf_appreladdr(int seg, Outbuffer *buf, int targseg, targ_size_t val)
 {
     if (I64)
     {
-        dwarf_addrel64(seg, buf->size(), targseg, val);
-        buf->write64(0);
+        val = dwarf_addrel64(seg, buf->size(), targseg, val);
+        buf->write64(val);
     }
     else
     {
-        dwarf_addrel(seg, buf->size(), targseg, 0);
+        val = dwarf_addrel(seg, buf->size(), targseg, val);
         buf->write32(val);
     }
 }
 
 void dwarf_apprel32(int seg, Outbuffer *buf, int targseg, targ_size_t val)
 {
-    dwarf_addrel(seg, buf->size(), targseg, I64 ? val : 0);
-    buf->write32(I64 ? 0 : val);
+    val = dwarf_addrel(seg, buf->size(), targseg, val);
+    buf->write32(val);
 }
 
 void append_addr(Outbuffer *buf, targ_size_t addr)

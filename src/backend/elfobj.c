@@ -2454,7 +2454,7 @@ unsigned Obj::bytes(int seg, targ_size_t offset, unsigned nbytes, void *p)
 
 int relcnt=0;
 
-void ElfObj::addrel(int seg, targ_size_t offset, unsigned type,
+targ_size_t ElfObj::addrel(int seg, targ_size_t offset, unsigned type,
                     IDXSYM symidx, targ_size_t val)
 {
     seg_data *segdata;
@@ -2542,6 +2542,7 @@ void ElfObj::addrel(int seg, targ_size_t offset, unsigned type,
             *(relbuf+i) = rel;          // copy to correct location
             segdata->SDrelindex = i;    // next entry usually greater
         }
+        return 0; // value in addend
     }
     else
     {
@@ -2569,6 +2570,7 @@ void ElfObj::addrel(int seg, targ_size_t offset, unsigned type,
             *(relbuf+i) = rel;          // copy to correct location
             segdata->SDrelindex = i;    // next entry usually greater
         }
+        return val; // value in target location
     }
 }
 
@@ -2685,13 +2687,13 @@ size_t ElfObj::writerel(int targseg, size_t offset, unsigned reltype,
 {
     assert(reltype != R_X86_64_NONE);
 
+    val = addrel(targseg, offset, reltype, symidx, val);
     size_t sz;
     if (I64)
     {
         // Elf64_Rela stores addend in Rela.r_addend field
         sz = relsize64(reltype);
-        writeaddrval(targseg, offset, 0, sz);
-        addrel(targseg, offset, reltype, symidx, val);
+        writeaddrval(targseg, offset, val, sz);
     }
     else
     {
@@ -2699,7 +2701,6 @@ size_t ElfObj::writerel(int targseg, size_t offset, unsigned reltype,
         // Elf32_Rel stores addend in target location
         sz = relsize32(reltype);
         writeaddrval(targseg, offset, val, sz);
-        addrel(targseg, offset, reltype, symidx, 0);
     }
     return sz;
 }

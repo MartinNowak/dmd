@@ -1540,11 +1540,11 @@ void Obj::staticctor(Symbol *s,int dtor,int none)
     s->Sseg = seg =
         ElfObj::getsegment(".ctors", NULL, SHT_PROGDEF, SHF_ALLOC|SHF_WRITE, 4);
     buf = SegData[seg]->SDbuf;
+    targ_size_t val = MachObj::addrel(seg, SegData[seg]->SDoffset, s, RELaddr, s->Soffset);
     if (I64)
-        buf->write64(s->Soffset);
+        buf->write64(val);
     else
-        buf->write32(s->Soffset);
-    MachObj::addrel(seg, SegData[seg]->SDoffset, s, RELaddr);
+        buf->write32(val);
     SegData[seg]->SDoffset = buf->size();
 #endif
 }
@@ -1567,11 +1567,11 @@ void Obj::staticdtor(Symbol *s)
     //symbol_print(s);
     seg = ElfObj::getsegment(".dtors", NULL, SHT_PROGDEF, SHF_ALLOC|SHF_WRITE, 4);
     buf = SegData[seg]->SDbuf;
+    targ_size_t val = MachObj::addrel(seg, SegData[seg]->SDoffset, s, RELaddr, s->Soffset);
     if (I64)
-        buf->write64(s->Soffset);
+        buf->write64(val);
     else
-        buf->write32(s->Soffset);
-    MachObj::addrel(seg, SegData[seg]->SDoffset, s, RELaddr);
+        buf->write32(val);
     SegData[seg]->SDoffset = buf->size();
 #endif
 }
@@ -2395,20 +2395,19 @@ void Obj::reftodatseg(int seg,targ_size_t offset,targ_size_t val,
     {
         assert(0);
     }
-    MachObj::addrel(seg, offset, NULL, targetdatum, RELaddr);
-    if (I64)
+    val = MachObj::addrel(seg, offset, NULL, targetdatum, RELaddr, val);
+    if (I64 && (flags & CFoffset64))
     {
-        if (flags & CFoffset64)
-        {
-            buf->write64(val);
-            if (save > offset + 8)
-                buf->setsize(save);
-            return;
-        }
+        buf->write64(val);
+        if (save > offset + 8)
+            buf->setsize(save);
     }
-    buf->write32(val);
-    if (save > offset + 4)
-        buf->setsize(save);
+    else
+    {
+        buf->write32(val);
+        if (save > offset + 4)
+            buf->setsize(save);
+    }
 }
 
 /*******************************
@@ -2429,7 +2428,7 @@ void Obj::reftocodeseg(int seg,targ_size_t offset,targ_size_t val)
     int save = buf->size();
     buf->setsize(offset);
     val -= funcsym_p->Soffset;
-    MachObj::addrel(seg, offset, funcsym_p, 0, RELaddr);
+    val = MachObj::addrel(seg, offset, funcsym_p, 0, RELaddr, val);
 //    if (I64)
 //        buf->write64(val);
 //    else
@@ -2477,16 +2476,13 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
         {
             //if (s->Sclass != SCcomdat)
                 //val += s->Soffset;
-            int v = 0;
-            if (flags & CFpc32)
-                v = (int)val;
             if (flags & CFselfrel)
             {
-                MachObj::addrel(seg, offset, s, 0, RELrel, v);
+                val = MachObj::addrel(seg, offset, s, 0, RELrel, val);
             }
             else
             {
-                MachObj::addrel(seg, offset, s, 0, RELaddr, v);
+                val = MachObj::addrel(seg, offset, s, 0, RELaddr, val);
             }
         }
         else
@@ -2527,13 +2523,13 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
                 indirectsymbuf1->write(&s, sizeof(Symbol *));
              L1:
                 val -= offset + 4;
-                MachObj::addrel(seg, offset, NULL, jumpTableSeg, RELrel);
+                val = MachObj::addrel(seg, offset, NULL, jumpTableSeg, RELrel, val);
             }
             else if (SegData[seg]->isCode() &&
                     ((s->Sclass != SCextern && SegData[s->Sseg]->isCode()) || s->Sclass == SClocstat || s->Sclass == SCstatic))
             {
                 val += s->Soffset;
-                MachObj::addrel(seg, offset, NULL, s->Sseg, RELaddr);
+                val = MachObj::addrel(seg, offset, NULL, s->Sseg, RELaddr, val);
             }
             else if (SegData[seg]->isCode() && !tyfunc(s->ty()))
             {
@@ -2567,11 +2563,11 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
 
              L2:
                 //printf("Obj::reftoident: seg = %d, offset = x%x, s = %s, val = x%x, pointersSeg = %d\n", seg, offset, s->Sident, val, pointersSeg);
-                MachObj::addrel(seg, offset, NULL, pointersSeg, RELaddr);
+                val = MachObj::addrel(seg, offset, NULL, pointersSeg, RELaddr, val);
             }
             else
             {   //val -= s->Soffset;
-                MachObj::addrel(seg, offset, s, 0, RELaddr);
+                val = MachObj::addrel(seg, offset, s, 0, RELaddr, val);
             }
         }
 
