@@ -95,6 +95,7 @@ STATIC void objfixupp (struct FIXUP *);
 STATIC void ledata_new (int seg,targ_size_t offset);
 
 static long elf_align(targ_size_t size, long offset);
+static void writeRelocations(int seg, const IDXSYM *sym_map, Outbuffer *buf);
 
 // The object file is built is several separate pieces
 
@@ -122,12 +123,7 @@ static int section_cnt;         // Number of sections in table
  * are grouped into 3 different types (and a 4th for comdef's).
  */
 
-static Outbuffer *local_symbuf;
-static Outbuffer *public_symbuf;
-static Outbuffer *extern_symbuf;
-
-struct Comdef { symbol *sym; targ_size_t size; int count; };
-static Outbuffer *comdef_symbuf;        // Comdef's are stored here
+static Outbuffer *symbol_table;
 
 static Outbuffer *indirectsymbuf1;      // indirect symbol table of Symbol*'s
 static int jumpTableSeg;                // segment index for __jump_table
@@ -186,6 +182,8 @@ int seg_count;
 int seg_max;
 int seg_tlsseg = UNKNOWN;
 int seg_tlsseg_bss = UNKNOWN;
+
+#define MAP_SEG2SECIDX(seg) (SegData[seg]->SDshtidx)
 
 /*******************************************************
  * Because the Mach-O relocations cannot be computed until after
@@ -296,9 +294,9 @@ static IDXSTR elf_findstr(Outbuffer *strtab, const char *str, const char *suffix
  * Returns index into the table.
  */
 
-static IDXSTR elf_addmangled(Symbol *s)
+static IDXSTR mach_addmangled(Symbol *s)
 {
-    //printf("elf_addmangled(%s)\n", s->Sident);
+    //printf("mach_addmangled(%s)\n", s->Sident);
     char dest[DEST_LEN];
     char *destr;
     const char *name;
@@ -409,7 +407,6 @@ int Obj::data_readonly(char *p, int len)
  * Perform initialization that applies to all .o output files.
  *      Called before any other obj_xxx routines
  */
-
 Obj *Obj::init(Outbuffer *objbuf, const char *filename, const char *csegname)
 {
     //printf("Obj::init()\n");
@@ -432,23 +429,11 @@ Obj *Obj::init(Outbuffer *objbuf, const char *filename, const char *csegname)
         symtab_strings->writeByte(0);
     }
 
-    if (!local_symbuf)
-        local_symbuf = new Outbuffer(sizeof(symbol *) * SYM_TAB_INIT);
-    local_symbuf->setsize(0);
+    if (!symbol_table)
+        symbol_table = new Outbuffer((I64 ? sizeof(nlist_64) : sizeof(nlist)) * SYM_TAB_INIT);
+    symbol_table->setsize(0);
 
-    if (!public_symbuf)
-        public_symbuf = new Outbuffer(sizeof(symbol *) * SYM_TAB_INIT);
-    public_symbuf->setsize(0);
-
-    if (!extern_symbuf)
-        extern_symbuf = new Outbuffer(sizeof(symbol *) * SYM_TAB_INIT);
-    extern_symbuf->setsize(0);
-
-    if (!comdef_symbuf)
-        comdef_symbuf = new Outbuffer(sizeof(symbol *) * SYM_TAB_INIT);
-    comdef_symbuf->setsize(0);
-
-    extdef = 0;
+    extdef = 0; // TODO: emit external symbols
 
     if (indirectsymbuf1)
         indirectsymbuf1->setsize(0);
@@ -567,43 +552,45 @@ void patch(seg_data *pseg, targ_size_t offset, int seg, targ_size_t value)
 }
 
 /***************************
- * Number symbols so they are
- * ordered as locals, public and then extern/comdef
+ * Renumber symbols so they are ordered as locals, public and then
+ * extern/comdef. Returns an array that maps from old to new symbol indices.
  */
 
-void mach_numbersyms()
+static IDXSYM *mach_renumbersyms(IDXSYM *plocal_cnt, IDXSYM *pextdef_cnt, IDXSYM *pundef_cnt)
 {
-    //printf("mach_numbersyms()\n");
-    int n = 0;
+    //printf("mach_renumbersyms()\n");
+    const size_t symbol_cnt = symbol_table->size() / (I64 ? sizeof(nlist_64) : sizeof(nlist));
+    struct nlist_64 *psyms64 = (struct nlist_64 *)symbol_table;
+    struct nlist *psyms = (struct nlist *)symbol_table;
 
-    int dim;
-    dim = local_symbuf->size() / sizeof(symbol *);
-    for (int i = 0; i < dim; i++)
-    {   symbol *s = ((symbol **)local_symbuf->buf)[i];
-        s->Sxtrnnum = n;
-        n++;
+    IDXSYM n = 0;
+    IDXSYM *sym_map = (IDXSYM *)util_malloc(sizeof(IDXSYM), symbol_cnt);
+    // locals
+    for (IDXSYM i = 0; i < symbol_cnt; ++i)
+    {
+        uint8_t type = I64 ? psyms64[i].n_type : psyms[i].n_type;
+        if ((type & (N_EXT | N_UNDF)) == 0)
+            sym_map[i] = n++;
     }
-
-    dim = public_symbuf->size() / sizeof(symbol *);
-    for (int i = 0; i < dim; i++)
-    {   symbol *s = ((symbol **)public_symbuf->buf)[i];
-        s->Sxtrnnum = n;
-        n++;
+    *plocal_cnt = n;
+    // extdef
+    for (IDXSYM i = 0; i < symbol_cnt; ++i)
+    {
+        uint8_t type = I64 ? psyms64[i].n_type : psyms[i].n_type;
+        if ((type & (N_EXT | N_UNDF)) == N_EXT)
+            sym_map[i] = n++;
     }
-
-    dim = extern_symbuf->size() / sizeof(symbol *);
-    for (int i = 0; i < dim; i++)
-    {   symbol *s = ((symbol **)extern_symbuf->buf)[i];
-        s->Sxtrnnum = n;
-        n++;
+    *pextdef_cnt = n - *plocal_cnt;
+    // undefined/comdef
+    for (IDXSYM i = 0; i < symbol_cnt; ++i)
+    {
+        uint8_t type = I64 ? psyms64[i].n_type : psyms[i].n_type;
+        if ((type & (N_EXT | N_UNDF)) == (N_EXT | N_UNDF))
+            sym_map[i] = n++;
     }
-
-    dim = comdef_symbuf->size() / sizeof(Comdef);
-    for (int i = 0; i < dim; i++)
-    {   Comdef *c = ((Comdef *)comdef_symbuf->buf) + i;
-        c->sym->Sxtrnnum = n;
-        n++;
-    }
+    *pundef_cnt = n - *pextdef_cnt - *plocal_cnt;
+    assert(n == symbol_cnt);
+    return sym_map;
 }
 
 
@@ -889,421 +876,64 @@ void Obj::term(const char *objfilename)
             segment_cmd.vmsize = segment_cmd.filesize;
     }
 
+    // Sort symbols
+    IDXSYM local_cnt, extdef_cnt, undef_cnt;
+    IDXSYM *sym_map = mach_renumbersyms(&local_cnt, &extdef_cnt, &undef_cnt);
+
     // Put out relocation data
-    mach_numbersyms();
     for (int seg = 1; seg <= seg_count; seg++)
     {
-        seg_data *pseg = SegData[seg];
-        struct section *psechdr = NULL;
-        struct section_64 *psechdr64 = NULL;
-        if (I64)
-        {
-            psechdr64 = &SecHdrTab64[pseg->SDshtidx];   // corresponding section
-            //printf("psechdr->addr = x%llx\n", psechdr64->addr);
-        }
-        else
-        {
-            psechdr = &SecHdrTab[pseg->SDshtidx];   // corresponding section
-            //printf("psechdr->addr = x%x\n", psechdr->addr);
-        }
         foffset = elf_align(I64 ? 8 : 4, foffset);
-        unsigned reloff = foffset;
-        unsigned nreloc = 0;
-        if (pseg->SDrel)
-        {   Relocation *r = (Relocation *)pseg->SDrel->buf;
-            Relocation *rend = (Relocation *)(pseg->SDrel->buf + pseg->SDrel->size());
-            for (; r != rend; r++)
-            {   symbol *s = r->targsym;
-                const char *rs = r->rtype == RELaddr ? "addr" : "rel";
-                //printf("%d:x%04llx : tseg %d tsym %s REL%s\n", seg, r->offset, r->targseg, s ? s->Sident : "0", rs);
-                relocation_info rel;
-                scattered_relocation_info srel;
-                if (s)
-                {
-                    //printf("Relocation\n");
-                    //symbol_print(s);
-                    if (pseg->isCode())
-                    {
-                        if (I64)
-                        {
-                            rel.r_type = (r->rtype == RELrel)
-                                    ? X86_64_RELOC_BRANCH
-                                    : X86_64_RELOC_SIGNED;
-                            if (r->val == -1)
-                                rel.r_type = X86_64_RELOC_SIGNED_1;
-                            else if (r->val == -2)
-                                rel.r_type = X86_64_RELOC_SIGNED_2;
-                            if (r->val == -4)
-                                rel.r_type = X86_64_RELOC_SIGNED_4;
-
-                            if (s->Sclass == SCextern ||
-                                s->Sclass == SCcomdef ||
-                                s->Sclass == SCcomdat ||
-                                s->Sclass == SCglobal)
-                            {
-                                if ((s->Sfl == FLfunc || s->Sfl == FLextern || s->Sclass == SCglobal || s->Sclass == SCcomdat || s->Sclass == SCcomdef) && r->rtype == RELaddr)
-                                    rel.r_type = X86_64_RELOC_GOT_LOAD;
-                                rel.r_address = r->offset;
-                                rel.r_symbolnum = s->Sxtrnnum;
-                                rel.r_pcrel = 1;
-                                rel.r_length = 2;
-                                rel.r_extern = 1;
-                                fobjbuf->write(&rel, sizeof(rel));
-                                foffset += sizeof(rel);
-                                nreloc++;
-                                continue;
-                            }
-                            else
-                            {
-                                rel.r_address = r->offset;
-                                rel.r_symbolnum = s->Sseg;
-                                rel.r_pcrel = 1;
-                                rel.r_length = 2;
-                                rel.r_extern = 0;
-                                fobjbuf->write(&rel, sizeof(rel));
-                                foffset += sizeof(rel);
-                                nreloc++;
-
-                                int32_t *p = patchAddr64(seg, r->offset);
-                                // Absolute address; add in addr of start of targ seg
-//printf("*p = x%x, .addr = x%x, Soffset = x%x\n", *p, (int)SecHdrTab64[SegData[s->Sseg]->SDshtidx].addr, (int)s->Soffset);
-//printf("pseg = x%x, r->offset = x%x\n", (int)SecHdrTab64[pseg->SDshtidx].addr, (int)r->offset);
-                                *p += SecHdrTab64[SegData[s->Sseg]->SDshtidx].addr;
-                                *p += s->Soffset;
-                                *p -= SecHdrTab64[pseg->SDshtidx].addr + r->offset + 4;
-                                //patch(pseg, r->offset, s->Sseg, s->Soffset);
-                                continue;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (s->Sclass == SCextern ||
-                            s->Sclass == SCcomdef ||
-                            s->Sclass == SCcomdat)
-                        {
-                            rel.r_address = r->offset;
-                            rel.r_symbolnum = s->Sxtrnnum;
-                            rel.r_pcrel = 0;
-                            rel.r_length = 2;
-                            rel.r_extern = 1;
-                            rel.r_type = GENERIC_RELOC_VANILLA;
-                            if (I64)
-                            {
-                                rel.r_type = X86_64_RELOC_UNSIGNED;
-                                rel.r_length = 3;
-                            }
-                            fobjbuf->write(&rel, sizeof(rel));
-                            foffset += sizeof(rel);
-                            nreloc++;
-                            continue;
-                        }
-                        else
-                        {
-                            rel.r_address = r->offset;
-                            rel.r_symbolnum = s->Sseg;
-                            rel.r_pcrel = 0;
-                            rel.r_length = 2;
-                            rel.r_extern = 0;
-                            rel.r_type = GENERIC_RELOC_VANILLA;
-                            if (I64)
-                            {
-                                rel.r_type = X86_64_RELOC_UNSIGNED;
-                                rel.r_length = 3;
-                                if (0 && s->Sseg != seg)
-                                    rel.r_type = X86_64_RELOC_BRANCH;
-                            }
-                            fobjbuf->write(&rel, sizeof(rel));
-                            foffset += sizeof(rel);
-                            nreloc++;
-                            if (I64)
-                            {
-                                rel.r_length = 3;
-                                int32_t *p = patchAddr64(seg, r->offset);
-                                // Absolute address; add in addr of start of targ seg
-                                *p += SecHdrTab64[SegData[s->Sseg]->SDshtidx].addr + s->Soffset;
-                                //patch(pseg, r->offset, s->Sseg, s->Soffset);
-                            }
-                            else
-                            {
-                                int32_t *p = patchAddr(seg, r->offset);
-                                // Absolute address; add in addr of start of targ seg
-                                *p += SecHdrTab[SegData[s->Sseg]->SDshtidx].addr + s->Soffset;
-                                //patch(pseg, r->offset, s->Sseg, s->Soffset);
-                            }
-                            continue;
-                        }
-                    }
-                }
-                else if (r->rtype == RELaddr && pseg->isCode())
-                {
-                    int32_t *p = NULL;
-                    int32_t *p64 = NULL;
-                    if (I64)
-                        p64 = patchAddr64(seg, r->offset);
-                    else
-                        p = patchAddr(seg, r->offset);
-                    srel.r_scattered = 1;
-
-                    srel.r_address = r->offset;
-                    srel.r_length = 2;
-                    if (I64)
-                    {
-                        srel.r_type = X86_64_RELOC_GOT;
-                        srel.r_value = SecHdrTab64[SegData[r->targseg]->SDshtidx].addr + *p64;
-                        //printf("SECTDIFF: x%llx + x%llx = x%x\n", SecHdrTab[SegData[r->targseg]->SDshtidx].addr, *p, srel.r_value);
-                    }
-                    else
-                    {
-                        srel.r_type = GENERIC_RELOC_LOCAL_SECTDIFF;
-                        srel.r_value = SecHdrTab[SegData[r->targseg]->SDshtidx].addr + *p;
-                        //printf("SECTDIFF: x%x + x%x = x%x\n", SecHdrTab[SegData[r->targseg]->SDshtidx].addr, *p, srel.r_value);
-                    }
-                    srel.r_pcrel = 0;
-                    fobjbuf->write(&srel, sizeof(srel));
-                    foffset += sizeof(srel);
-                    nreloc++;
-
-                    srel.r_address = 0;
-                    srel.r_type = GENERIC_RELOC_PAIR;
-                    srel.r_length = 2;
-                    if (I64)
-                        srel.r_value = SecHdrTab64[pseg->SDshtidx].addr +
-                                r->funcsym->Slocalgotoffset + NPTRSIZE;
-                    else
-                        srel.r_value = SecHdrTab[pseg->SDshtidx].addr +
-                                r->funcsym->Slocalgotoffset + NPTRSIZE;
-                    srel.r_pcrel = 0;
-                    fobjbuf->write(&srel, sizeof(srel));
-                    foffset += sizeof(srel);
-                    nreloc++;
-
-                    // Recalc due to possible realloc of fobjbuf->buf
-                    if (I64)
-                    {
-                        p64 = patchAddr64(seg, r->offset);
-                        //printf("address = x%x, p64 = %p *p64 = x%llx\n", r->offset, p64, *p64);
-                        *p64 += SecHdrTab64[SegData[r->targseg]->SDshtidx].addr -
-                              (SecHdrTab64[pseg->SDshtidx].addr + r->funcsym->Slocalgotoffset + NPTRSIZE);
-                    }
-                    else
-                    {
-                        p = patchAddr(seg, r->offset);
-                        //printf("address = x%x, p = %p *p = x%x\n", r->offset, p, *p);
-                        *p += SecHdrTab[SegData[r->targseg]->SDshtidx].addr -
-                              (SecHdrTab[pseg->SDshtidx].addr + r->funcsym->Slocalgotoffset + NPTRSIZE);
-                    }
-                    continue;
-                }
-                else
-                {
-                    rel.r_address = r->offset;
-                    rel.r_symbolnum = r->targseg;
-                    rel.r_pcrel = (r->rtype == RELaddr) ? 0 : 1;
-                    rel.r_length = 2;
-                    rel.r_extern = 0;
-                    rel.r_type = GENERIC_RELOC_VANILLA;
-                    if (I64)
-                    {
-                        rel.r_type = X86_64_RELOC_UNSIGNED;
-                        rel.r_length = 3;
-                        if (0 && r->targseg != seg)
-                            rel.r_type = X86_64_RELOC_BRANCH;
-                    }
-                    fobjbuf->write(&rel, sizeof(rel));
-                    foffset += sizeof(rel);
-                    nreloc++;
-                    if (I64)
-                    {
-                        int32_t *p64 = patchAddr64(seg, r->offset);
-                        //int64_t before = *p64;
-                        if (rel.r_pcrel)
-                            // Relative address
-                            patch(pseg, r->offset, r->targseg, 0);
-                        else
-                        {   // Absolute address; add in addr of start of targ seg
-//printf("*p = x%x, targ.addr = x%x\n", *p64, (int)SecHdrTab64[SegData[r->targseg]->SDshtidx].addr);
-//printf("pseg = x%x, r->offset = x%x\n", (int)SecHdrTab64[pseg->SDshtidx].addr, (int)r->offset);
-                            *p64 += SecHdrTab64[SegData[r->targseg]->SDshtidx].addr;
-                            //*p64 -= SecHdrTab64[pseg->SDshtidx].addr;
-                        }
-                        //printf("%d:x%04x before = x%04llx, after = x%04llx pcrel = %d\n", seg, r->offset, before, *p64, rel.r_pcrel);
-                    }
-                    else
-                    {
-                        int32_t *p = patchAddr(seg, r->offset);
-                        //int32_t before = *p;
-                        if (rel.r_pcrel)
-                            // Relative address
-                            patch(pseg, r->offset, r->targseg, 0);
-                        else
-                            // Absolute address; add in addr of start of targ seg
-                            *p += SecHdrTab[SegData[r->targseg]->SDshtidx].addr;
-                        //printf("%d:x%04x before = x%04x, after = x%04x pcrel = %d\n", seg, r->offset, before, *p, rel.r_pcrel);
-                    }
-                    continue;
-                }
-            }
-        }
-        if (nreloc)
-        {
-            if (I64)
-            {
-                psechdr64->reloff = reloff;
-                psechdr64->nreloc = nreloc;
-            }
-            else
-            {
-                psechdr->reloff = reloff;
-                psechdr->nreloc = nreloc;
-            }
-        }
+        assert(foffset == fobjbuf->size());
+        writeRelocations(seg, sym_map, fobjbuf);
+        foffset = fobjbuf->size();
     }
 
     // Put out symbol table
+    const size_t symbol_cnt = symbol_table->size() / (I64 ? sizeof(nlist_64) : sizeof(nlist));
     foffset = elf_align(I64 ? 8 : 4, foffset);
     symtab_cmd.symoff = foffset;
     dysymtab_cmd.ilocalsym = 0;
-    dysymtab_cmd.nlocalsym  = local_symbuf->size() / sizeof(symbol *);
-    dysymtab_cmd.iextdefsym = dysymtab_cmd.nlocalsym;
-    dysymtab_cmd.nextdefsym = public_symbuf->size() / sizeof(symbol *);
-    dysymtab_cmd.iundefsym = dysymtab_cmd.iextdefsym + dysymtab_cmd.nextdefsym;
-    int nexterns = extern_symbuf->size() / sizeof(symbol *);
-    int ncomdefs = comdef_symbuf->size() / sizeof(Comdef);
-    dysymtab_cmd.nundefsym  = nexterns + ncomdefs;
-    symtab_cmd.nsyms =  dysymtab_cmd.nlocalsym +
-                        dysymtab_cmd.nextdefsym +
-                        dysymtab_cmd.nundefsym;
-    fobjbuf->reserve(symtab_cmd.nsyms * (I64 ? sizeof(struct nlist_64) : sizeof(struct nlist)));
-    for (int i = 0; i < dysymtab_cmd.nlocalsym; i++)
-    {   symbol *s = ((symbol **)local_symbuf->buf)[i];
-        struct nlist_64 sym;
-        sym.n_un.n_strx = elf_addmangled(s);
-        sym.n_type = N_SECT;
-        sym.n_desc = 0;
-        if (s->Sclass == SCcomdat)
-            sym.n_desc = N_WEAK_DEF;
-        sym.n_sect = s->Sseg;
-        if (I64)
-        {
-            sym.n_value = s->Soffset + SecHdrTab64[SegData[s->Sseg]->SDshtidx].addr;
-            fobjbuf->write(&sym, sizeof(sym));
-        }
-        else
-        {
-            struct nlist sym32;
-            sym32.n_un.n_strx = sym.n_un.n_strx;
-            sym32.n_value = s->Soffset + SecHdrTab[SegData[s->Sseg]->SDshtidx].addr;
-            sym32.n_type = sym.n_type;
-            sym32.n_desc = sym.n_desc;
-            sym32.n_sect = sym.n_sect;
-            fobjbuf->write(&sym32, sizeof(sym32));
-        }
-    }
-    for (int i = 0; i < dysymtab_cmd.nextdefsym; i++)
-    {   symbol *s = ((symbol **)public_symbuf->buf)[i];
+    dysymtab_cmd.nlocalsym  = local_cnt;
+    dysymtab_cmd.iextdefsym = local_cnt;
+    dysymtab_cmd.nextdefsym = extdef_cnt;
+    dysymtab_cmd.iundefsym = local_cnt + extdef_cnt;
+    dysymtab_cmd.nundefsym  = undef_cnt;
+    assert(local_cnt + extdef_cnt + undef_cnt == symbol_cnt);
+    symtab_cmd.nsyms = symbol_cnt;
 
-        //printf("Writing public symbol %d:x%x %s\n", s->Sseg, s->Soffset, s->Sident);
-        struct nlist_64 sym;
-        sym.n_un.n_strx = elf_addmangled(s);
-        sym.n_type = N_EXT | N_SECT;
-        sym.n_desc = 0;
-        if (s->Sclass == SCcomdat)
-            sym.n_desc = N_WEAK_DEF;
-        sym.n_sect = s->Sseg;
-        if (I64)
-        {
-            sym.n_value = s->Soffset + SecHdrTab64[SegData[s->Sseg]->SDshtidx].addr;
-            fobjbuf->write(&sym, sizeof(sym));
-        }
-        else
-        {
-            struct nlist sym32;
-            sym32.n_un.n_strx = sym.n_un.n_strx;
-            sym32.n_value = s->Soffset + SecHdrTab[SegData[s->Sseg]->SDshtidx].addr;
-            sym32.n_type = sym.n_type;
-            sym32.n_desc = sym.n_desc;
-            sym32.n_sect = sym.n_sect;
-            fobjbuf->write(&sym32, sizeof(sym32));
-        }
-    }
-    for (int i = 0; i < nexterns; i++)
-    {   symbol *s = ((symbol **)extern_symbuf->buf)[i];
-        struct nlist_64 sym;
-        sym.n_un.n_strx = elf_addmangled(s);
-        sym.n_value = s->Soffset;
-        sym.n_type = N_EXT | N_UNDF;
-        sym.n_desc = tyfunc(s->ty()) ? REFERENCE_FLAG_UNDEFINED_LAZY
-                                     : REFERENCE_FLAG_UNDEFINED_NON_LAZY;
-        sym.n_sect = 0;
-        if (I64)
-            fobjbuf->write(&sym, sizeof(sym));
-        else
-        {
-            struct nlist sym32;
-            sym32.n_un.n_strx = sym.n_un.n_strx;
-            sym32.n_value = sym.n_value;
-            sym32.n_type = sym.n_type;
-            sym32.n_desc = sym.n_desc;
-            sym32.n_sect = sym.n_sect;
-            fobjbuf->write(&sym32, sizeof(sym32));
-        }
-    }
-    for (int i = 0; i < ncomdefs; i++)
-    {   Comdef *c = ((Comdef *)comdef_symbuf->buf) + i;
-        struct nlist_64 sym;
-        sym.n_un.n_strx = elf_addmangled(c->sym);
-        sym.n_value = c->size * c->count;
-        sym.n_type = N_EXT | N_UNDF;
-        int align;
-        if (c->size < 2)
-            align = 0;          // align is expressed as power of 2
-        else if (c->size < 4)
-            align = 1;
-        else if (c->size < 8)
-            align = 2;
-        else if (c->size < 16)
-            align = 3;
-        else
-            align = 4;
-        sym.n_desc = align << 8;
-        sym.n_sect = 0;
-        if (I64)
-            fobjbuf->write(&sym, sizeof(sym));
-        else
-        {
-            struct nlist sym32;
-            sym32.n_un.n_strx = sym.n_un.n_strx;
-            sym32.n_value = sym.n_value;
-            sym32.n_type = sym.n_type;
-            sym32.n_desc = sym.n_desc;
-            sym32.n_sect = sym.n_sect;
-            fobjbuf->write(&sym32, sizeof(sym32));
-        }
-    }
-    if (extdef)
+    if (I64)
     {
-        struct nlist_64 sym;
-        sym.n_un.n_strx = extdef;
-        sym.n_value = 0;
-        sym.n_type = N_EXT | N_UNDF;
-        sym.n_desc = 0;
-        sym.n_sect = 0;
-        if (I64)
-            fobjbuf->write(&sym, sizeof(sym));
-        else
+        struct nlist_64 *psyms = (struct nlist_64 *)symbol_table;
+        fobjbuf->reserve(symbol_cnt * sizeof(psyms[0]));
+        for (IDXSYM i = 0; i < local_cnt + extdef_cnt; ++i)
         {
-            struct nlist sym32;
-            sym32.n_un.n_strx = sym.n_un.n_strx;
-            sym32.n_value = sym.n_value;
-            sym32.n_type = sym.n_type;
-            sym32.n_desc = sym.n_desc;
-            sym32.n_sect = sym.n_sect;
-            fobjbuf->write(&sym32, sizeof(sym32));
+            struct nlist_64 *psym = &psyms[sym_map[i]];
+            // relocate all defined symbols by section address
+            psym->n_value += SecHdrTab64[psym->n_sect].addr;
+            fobjbuf->write(psym, sizeof(*psym));
         }
-        symtab_cmd.nsyms++;
+        // Put out undefined symbols
+        for (IDXSYM i = local_cnt + extdef_cnt; i < symbol_cnt; ++i)
+            fobjbuf->write(&psyms[sym_map[i]], sizeof(psyms[0]));
+        foffset += symbol_cnt * sizeof(psyms[0]);
     }
-    foffset += symtab_cmd.nsyms * (I64 ? sizeof(struct nlist_64) : sizeof(struct nlist));
+    else
+    {
+        struct nlist *psyms = (struct nlist *)symbol_table;
+        fobjbuf->reserve(symbol_cnt * sizeof(psyms[0]));
+        for (IDXSYM i = 0; i < local_cnt + extdef_cnt; ++i)
+        {
+            struct nlist *psym = &psyms[sym_map[i]];
+            // relocate all defined symbols by section address
+            psym->n_value += SecHdrTab[psym->n_sect].addr;
+            fobjbuf->write(psym, sizeof(*psym));
+        }
+        // Put out undefined symbols
+        for (IDXSYM i = local_cnt + extdef_cnt; i < symbol_cnt; ++i)
+            fobjbuf->write(&psyms[sym_map[i]], sizeof(psyms[0]));
+        foffset += symbol_cnt * sizeof(psyms[0]);
+    }
 
     // Put out string table
     foffset = elf_align(I64 ? 8 : 4, foffset);
@@ -1316,19 +946,20 @@ void Obj::term(const char *objfilename)
     foffset = elf_align(I64 ? 8 : 4, foffset);
     dysymtab_cmd.indirectsymoff = foffset;
     if (indirectsymbuf1)
-    {   dysymtab_cmd.nindirectsyms += indirectsymbuf1->size() / sizeof(Symbol *);
-        for (int i = 0; i < dysymtab_cmd.nindirectsyms; i++)
-        {   Symbol *s = ((Symbol **)indirectsymbuf1->buf)[i];
-            fobjbuf->write32(s->Sxtrnnum);
-        }
+    {
+        IDXSYM cnt = indirectsymbuf1->size() / sizeof(IDXSYM);
+        IDXSYM *psyms = (IDXSYM *)indirectsymbuf1->buf;
+        for (IDXSYM i = 0; i < cnt; ++i)
+            fobjbuf->write32(sym_map[psyms[i]]);
+        dysymtab_cmd.nindirectsyms += cnt;
     }
     if (indirectsymbuf2)
-    {   int n = indirectsymbuf2->size() / sizeof(Symbol *);
-        dysymtab_cmd.nindirectsyms += n;
-        for (int i = 0; i < n; i++)
-        {   Symbol *s = ((Symbol **)indirectsymbuf2->buf)[i];
-            fobjbuf->write32(s->Sxtrnnum);
-        }
+    {
+        IDXSYM cnt = indirectsymbuf2->size() / sizeof(IDXSYM);
+        IDXSYM *psyms = (IDXSYM *)indirectsymbuf2->buf;
+        for (IDXSYM i = 0; i < cnt; ++i)
+            fobjbuf->write32(sym_map[psyms[i]]);
+        dysymtab_cmd.nindirectsyms += cnt;
     }
     foffset += dysymtab_cmd.nindirectsyms * 4;
 
@@ -2075,12 +1706,40 @@ void Obj::func_term(Symbol *sfunc)
         dwarf_func_term(sfunc);
 }
 
+/** Add a symbol to the symbol table. Arguments match nlist/nlist_64 fields.
+ */
+static IDXSYM mach_addsym(IDXSTR namidx, uint8_t type, uint8_t sect, uint16_t desc, uint64_t value)
+{
+    if (I64)
+    {
+        struct nlist_64 sym;
+        sym.n_un.n_strx = namidx;
+        sym.n_type = type;
+        sym.n_sect = sect;
+        sym.n_desc = desc;
+        sym.n_value = value;
+        symbol_table->write(&sym, sizeof(sym));
+        return symbol_table->size() / sizeof(sym) - 1;
+    }
+    else
+    {
+        struct nlist sym;
+        sym.n_un.n_strx = namidx;
+        sym.n_type = type;
+        sym.n_sect = sect;
+        sym.n_desc = desc;
+        sym.n_value = value;
+        symbol_table->write(&sym, sizeof(sym));
+        return symbol_table->size() / sizeof(sym) - 1;
+    }
+}
+
 /********************************
  * Output a public definition.
  * Input:
- *      seg =           segment index that symbol is defined in
+ *      sect =          section index that symbol is defined in
  *      s ->            symbol
- *      offset =        offset of name within segment
+ *      offset =        offset of name within section
  */
 
 void Obj::pubdefsize(int seg, Symbol *s, targ_size_t offset, targ_size_t symsize)
@@ -2090,30 +1749,37 @@ void Obj::pubdefsize(int seg, Symbol *s, targ_size_t offset, targ_size_t symsize
 
 void Obj::pubdef(int seg, Symbol *s, targ_size_t offset)
 {
-#if 0
-    printf("Obj::pubdef(%d:x%x s=%p, %s)\n", seg, offset, s, s->Sident);
-    //symbol_print(s);
-#endif
-    symbol_debug(s);
-
-    s->Soffset = offset;
-    s->Sseg = seg;
+    uint8_t type;
+    uint16_t desc;
     switch (s->Sclass)
     {
         case SCglobal:
         case SCinline:
-            public_symbuf->write(&s, sizeof(s));
+            type = N_EXT | N_SECT;
+            desc = 0;
             break;
         case SCcomdat:
         case SCcomdef:
-            public_symbuf->write(&s, sizeof(s));
+            type = N_EXT | N_SECT;
+            desc = N_WEAK_DEF;
             break;
         default:
-            local_symbuf->write(&s, sizeof(s));
+            type = N_SECT;
+            desc = 0;
             break;
     }
-    //printf("%p\n", *(void**)public_symbuf->buf);
-    s->Sxtrnnum = 1;
+
+#if 0
+    //printf("\nObj::pubdef(%d,%s,%d)\n",seg,s->Sident,offset);
+    //symbol_print(s);
+#endif
+
+    symbol_debug(s);
+    IDXSTR namidx = mach_addmangled(s);
+    // offset will be relocated later to offset + section.addr
+    s->Sxtrnnum = mach_addsym(namidx, type, MAP_SEG2SECIDX(seg), desc, offset);
+    s->Soffset = offset; // TODO: needed?
+    s->Sseg = seg; // TODO: needed?
 }
 
 /*******************************
@@ -2130,9 +1796,11 @@ int Obj::external_def(const char *name)
 {
     //printf("Obj::external_def('%s')\n",name);
     assert(name);
-    assert(extdef == 0);
-    extdef = Obj::addstr(symtab_strings, name);
-    return 0;
+    IDXSTR namidx = Obj::addstr(symtab_strings, name);
+    uint8_t type = N_EXT | N_UNDF;
+    uint8_t sect = 0;
+    uint16_t desc = 0;
+    return mach_addsym(namidx, type, sect, desc, 0);
 }
 
 
@@ -2150,9 +1818,12 @@ int Obj::external(Symbol *s)
 {
     //printf("Obj::external('%s') %x\n",s->Sident,s->Svalue);
     symbol_debug(s);
-    extern_symbuf->write(&s, sizeof(s));
-    s->Sxtrnnum = 1;
-    return 0;
+    IDXSTR namidx = mach_addmangled(s);
+    uint8_t type = N_EXT | N_UNDF;
+    uint8_t sect = 0;
+    uint16_t desc = tyfunc(s->ty()) ? REFERENCE_FLAG_UNDEFINED_LAZY
+        : REFERENCE_FLAG_UNDEFINED_NON_LAZY;
+    return mach_addsym(namidx, type, sect, desc, s->Soffset);
 }
 
 /*******************************
@@ -2165,27 +1836,35 @@ int Obj::external(Symbol *s)
  *      Symbol table index for symbol
  */
 
-int Obj::common_block(Symbol *s,targ_size_t size,targ_size_t count)
+int Obj::common_block(Symbol *s, targ_size_t size, targ_size_t count)
 {
-    //printf("Obj::common_block('%s', size=%d, count=%d)\n",s->Sident,size,count);
-    symbol_debug(s);
-
     // can't have code or thread local comdef's
     assert(!(s->ty() & (
 #if TARGET_SEGMENTED
                     mTYcs |
 #endif
                     mTYthread)));
+    uint8_t align;
+    if (size < 2)
+        align = 0;          // align is expressed as power of 2
+    else if (size < 4)
+        align = 1;
+    else if (size < 8)
+        align = 2;
+    else if (size < 16)
+        align = 3;
+    else
+        align = 4;
 
-    struct Comdef comdef;
-    comdef.sym = s;
-    comdef.size = size;
-    comdef.count = count;
-    comdef_symbuf->write(&comdef, sizeof(comdef));
-    s->Sxtrnnum = 1;
+    //printf("Obj::common_block('%s', size=%d, count=%d)\n",s->Sident,size,count);
+    symbol_debug(s);
+    IDXSTR namidx = mach_addmangled(s);
+    uint8_t type = N_EXT | N_UNDF;
+    uint8_t sect = 0;
+    uint16_t desc = align << 8;
     if (!s->Sseg)
-        s->Sseg = UDATA;
-    return 0;           // should return void
+        s->Sseg = UDATA; // TODO: needed?
+    return mach_addsym(namidx, type, sect, desc, size * count);
 }
 
 int Obj::common_block(Symbol *s, int flag, targ_size_t size, targ_size_t count)
@@ -2309,59 +1988,209 @@ if (!buf) halt();
 void MachObj::addrel(int seg, targ_size_t offset, symbol *targsym,
         unsigned targseg, int rtype, int val)
 {
-    Relocation rel;
-    rel.offset = offset;
-    rel.targsym = targsym;
-    rel.targseg = targseg;
-    rel.rtype = rtype;
-    rel.funcsym = funcsym_p;
-    rel.val = val;
     seg_data *pseg = SegData[seg];
     if (!pseg->SDrel)
         pseg->SDrel = new Outbuffer();
-    pseg->SDrel->write(&rel, sizeof(rel));
+
+    if (targsym)
+    {
+        symbol *s = targsym;
+        relocation_info rel;
+        rel.r_address = offset;
+        if (pseg->isCode())
+        {
+            if (I64)
+            {
+                rel.r_pcrel = 1;
+                rel.r_length = 2; // TODO: shouldn't this be 3 for I64?
+
+                switch (val)
+                {
+                case -1: rel.r_type = X86_64_RELOC_SIGNED_1; break;
+                case -2: rel.r_type = X86_64_RELOC_SIGNED_2; break;
+                case -4: rel.r_type = X86_64_RELOC_SIGNED_4; break;
+                default: rel.r_type = (rtype == RELrel) ? X86_64_RELOC_BRANCH : X86_64_RELOC_SIGNED; break;
+                }
+
+                if (s->Sclass == SCextern ||
+                    s->Sclass == SCcomdef ||
+                    s->Sclass == SCcomdat ||
+                    s->Sclass == SCglobal)
+                {
+                    if ((s->Sfl == FLfunc || s->Sfl == FLextern || s->Sclass == SCglobal || s->Sclass == SCcomdat || s->Sclass == SCcomdef) && rtype == RELaddr)
+                        rel.r_type = X86_64_RELOC_GOT_LOAD;
+                    rel.r_symbolnum = s->Sxtrnnum;
+                    rel.r_extern = 1;
+                }
+                else
+                {
+                    rel.r_symbolnum = s->Sseg; // TODO: why not relocate against Sxtrnnum?
+                    rel.r_extern = 0;
+
+                    // relative: targseg.addr + s->Soffset - (seg.addr + offset + 4)
+                    // section addresses not yet known => patched later
+                    int32_t *p = patchAddr64(seg, offset);
+                    *p += s->Soffset;
+                    *p -= offset + 4;
+                }
+            }
+            else
+            {
+                // 32-bit only uses the value written to the target address
+            }
+        }
+        else
+        {
+            rel.r_pcrel = 0;
+            rel.r_length = I64 ? 3 : 2;
+            rel.r_type = I64 ? X86_64_RELOC_UNSIGNED : GENERIC_RELOC_VANILLA;
+
+            if (s->Sclass == SCextern ||
+                s->Sclass == SCcomdef ||
+                s->Sclass == SCcomdat)
+            {
+                rel.r_symbolnum = s->Sxtrnnum;
+                rel.r_extern = 1;
+            }
+            else
+            {
+                rel.r_symbolnum = s->Sseg;
+                rel.r_extern = 0;
+                // absolute: targseg.addr + s->Soffset; section address patched later
+                *(I64 ? patchAddr64(seg, offset) : patchAddr(seg, offset)) += s->Soffset;
+            }
+        }
+        pseg->SDrel->write(&rel, sizeof(rel));
+    }
+    else if (rtype == RELaddr && pseg->isCode())
+    {
+        assert(0); // TODO: is this actually used
+        scattered_relocation_info srel;
+        srel.r_address = offset;
+        if (I64)
+            srel.r_type = X86_64_RELOC_GOT; // TODO: why reloc pair?
+        else
+            srel.r_type = GENERIC_RELOC_LOCAL_SECTDIFF; // TODO: why sectdiff when we can already compute the relative offset
+        srel.r_length = 2;
+        srel.r_pcrel = 0;
+        srel.r_scattered = 1;
+        // absolute: targseg.addr + value; section address patched later
+        if (I64)
+            srel.r_value = *patchAddr64(seg, offset);
+        else
+            srel.r_value = *patchAddr(seg, offset);
+        pseg->SDrel->write(&srel, sizeof(srel));
+
+        srel.r_address = targseg; // HACK: targseg temporarily stored in unused r_address
+        srel.r_type = GENERIC_RELOC_PAIR;
+        srel.r_length = 2;
+        srel.r_pcrel = 0;
+        srel.r_scattered = 1;
+        // absolute: seg.addr + func.Slocalgotoffset + NPTRSIZE; section address patched later
+        srel.r_value = funcsym_p->Slocalgotoffset + NPTRSIZE; // TODO: check funcsym_p->Slocalgotoffset
+        pseg->SDrel->write(&srel, sizeof(srel));
+    }
+    else
+    {
+        relocation_info rel;
+        rel.r_address = offset;
+        rel.r_symbolnum = targseg;
+        rel.r_pcrel = (rtype == RELaddr) ? 0 : 1;
+        rel.r_length = I64 ? 3 : 2;
+        rel.r_extern = 0;
+        rel.r_type = I64 ? X86_64_RELOC_UNSIGNED : GENERIC_RELOC_VANILLA;
+        // relative: value += targseg.addr - seg.addr; section address patched later
+        if (rel.r_pcrel)
+        {
+        }
+        // absolute: value += targseg.addr; section address patched later
+        else
+        {
+        }
+        pseg->SDrel->write(&rel, sizeof(rel));
+    }
 }
 
-/****************************************
- * Sort the relocation entry buffer.
+/**
+ * Write relocations for a segment to object file.
+ * Params:
+ *   seg = the segment for which to write relocations
+ *   sym_map = mapping for renumbered symbol indices
+ *   buf = output buffer to write the relocations to
+ * Returns:
+ *   The number of bytes written
  */
-
-#if __DMC__
-static int __cdecl rel_fp(const void *e1, const void *e2)
-{   Relocation *r1 = (Relocation *)e1;
-    Relocation *r2 = (Relocation *)e2;
-
-    return r1->offset - r2->offset;
-}
-#else
-extern "C" {
-static int rel_fp(const void *e1, const void *e2)
-{   Relocation *r1 = (Relocation *)e1;
-    Relocation *r2 = (Relocation *)e2;
-
-    return r1->offset - r2->offset;
-}
-}
-#endif
-
-void mach_relsort(Outbuffer *buf)
+static void writeRelocations(int seg, const IDXSYM *sym_map, Outbuffer *buf)
 {
-    qsort(buf->buf, buf->size() / sizeof(Relocation), sizeof(Relocation), &rel_fp);
-}
+    seg_data *pseg = SegData[seg];
+    const unsigned nreloc = pseg->SDrel ? pseg->SDrel->size() / sizeof(relocation_info) : 0;
+    if (!nreloc)
+        return;
 
-/*******************************
- * Output a relocation entry for a segment
- * Input:
- *      seg =           where the address is going
- *      offset =        offset within seg
- *      type =          ELF relocation type
- *      index =         Related symbol table index
- *      val =           addend or displacement from address
- */
+    if (I64)
+        SecHdrTab64[MAP_SEG2SECIDX(seg)].reloff = buf->size();
+    else
+        SecHdrTab[MAP_SEG2SECIDX(seg)].reloff = buf->size();
 
-void ElfObj::addrel(int seg, targ_size_t offset, unsigned type,
-                                        IDXSYM symidx, targ_size_t val)
-{
+    relocation_info *r = (relocation_info *)pseg->SDrel->buf;
+
+    for (size_t i = 0; i < nreloc; ++i)
+    {
+        if (r[i].r_address & R_SCATTERED)
+        {
+            assert(0);
+            scattered_relocation_info *sr = (scattered_relocation_info *)r; // same size as relocation_info
+            assert(sr[i].r_type == GENERIC_RELOC_LOCAL_SECTDIFF);
+            assert(sr[i + 1].r_type == GENERIC_RELOC_PAIR);
+            IDXSYM targseg = sr[i + 1].r_address; // HACK: targseg temporarily stored in unused r_address
+            sr[i + 1].r_address = 0;
+
+            // absolute: targseg.addr + value; segment address patched later
+            // absolute: seg.addr + func.Slocalgotoffset + NPTRSIZE; section address patched later
+            if (I64)
+            {
+                sr[i].r_value += SecHdrTab64[MAP_SEG2SECIDX(targseg)].addr;
+                sr[i + 1].r_value += SecHdrTab64[MAP_SEG2SECIDX(seg)].addr;
+            }
+            else
+            {
+                sr[i].r_value += SecHdrTab[MAP_SEG2SECIDX(targseg)].addr;
+                sr[i + 1].r_value += SecHdrTab64[MAP_SEG2SECIDX(seg)].addr;
+            }
+            buf->write(&sr[i], 2 * sizeof(sr[i]));
+            ++i; // for the pair
+        }
+        else if (r[i].r_extern)
+        {
+            // relative to symbol, doesn't need any section address
+            r[i].r_symbolnum = sym_map[r[i].r_symbolnum]; // remap symbol index
+            buf->write(&r[i], sizeof(r[i]));
+        }
+        else
+        {
+            IDXSYM targseg = r[i].r_symbolnum; // contains target section when r_extern == 0
+            if (I64)
+            {
+                int32_t *p = patchAddr64(seg, r[i].r_address);
+                *p += SecHdrTab64[MAP_SEG2SECIDX(targseg)].addr; // += targseg.addr
+                if (r[i].r_pcrel)
+                    *p -= SecHdrTab64[MAP_SEG2SECIDX(seg)].addr; // -= seg.addr
+            }
+            else
+            {
+                int32_t *p = patchAddr(seg, r[i].r_address);
+                *p += SecHdrTab[MAP_SEG2SECIDX(targseg)].addr; // += targseg.addr
+                if (r[i].r_pcrel)
+                    *p -= SecHdrTab[MAP_SEG2SECIDX(seg)].addr; // -= seg.addr
+            }
+            buf->write(&r[i], sizeof(r[i]));
+        }
+    }
+
+    if (I64)
+        SecHdrTab64[MAP_SEG2SECIDX(seg)].nreloc = nreloc;
+    else
+        SecHdrTab[MAP_SEG2SECIDX(seg)].nreloc = nreloc;
 }
 
 /*******************************
@@ -2504,13 +2333,15 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
                 if (!indirectsymbuf1)
                     indirectsymbuf1 = new Outbuffer();
                 else
-                {   // Look through indirectsym to see if it is already there
-                    int n = indirectsymbuf1->size() / sizeof(Symbol *);
-                    Symbol **psym = (Symbol **)indirectsymbuf1->buf;
-                    for (int i = 0; i < n; i++)
-                    {   // Linear search, pretty pathetic
-                        if (s == psym[i])
-                        {   val = i * 5;
+                {
+                    // Look through indirectsym to see if it is already there
+                    IDXSYM cnt = indirectsymbuf1->size() / sizeof(IDXSYM);
+                    IDXSYM *psyms = (IDXSYM *)indirectsymbuf1->buf;
+                    for (IDXSYM i = 0; i < cnt; ++i)
+                    {
+                        if (psyms[i] == s->Sxtrnnum)
+                        {
+                            val = i * 5;
                             goto L1;
                         }
                     }
@@ -2520,8 +2351,8 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
                 static char halts[5] = { 0xF4,0xF4,0xF4,0xF4,0xF4 };
                 pseg->SDbuf->write(halts, 5);
 
-                // Add symbol s to indirectsymbuf1
-                indirectsymbuf1->write(&s, sizeof(Symbol *));
+                // Add symbol index to indirectsymbuf1
+                indirectsymbuf1->write32(s->Sxtrnnum);
              L1:
                 val -= offset + 4;
                 MachObj::addrel(seg, offset, NULL, jumpTableSeg, RELrel);
@@ -2544,13 +2375,15 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
                 if (!indirectsymbuf2)
                     indirectsymbuf2 = new Outbuffer();
                 else
-                {   // Look through indirectsym to see if it is already there
-                    int n = indirectsymbuf2->size() / sizeof(Symbol *);
-                    Symbol **psym = (Symbol **)indirectsymbuf2->buf;
-                    for (int i = 0; i < n; i++)
-                    {   // Linear search, pretty pathetic
-                        if (s == psym[i])
-                        {   val = i * 4;
+                {
+                    // Look through indirectsym to see if it is already there
+                    IDXSYM cnt = indirectsymbuf2->size() / sizeof(IDXSYM);
+                    IDXSYM *psyms = (IDXSYM *)indirectsymbuf2->buf;
+                    for (IDXSYM i = 0; i < cnt; ++i)
+                    {
+                        if (psyms[i] == s->Sxtrnnum)
+                        {
+                            val = i * 4;
                             goto L2;
                         }
                     }
@@ -2559,8 +2392,8 @@ int Obj::reftoident(int seg, targ_size_t offset, Symbol *s, targ_size_t val,
                 val = pseg->SDbuf->size();
                 pseg->SDbuf->writezeros(NPTRSIZE);
 
-                // Add symbol s to indirectsymbuf2
-                indirectsymbuf2->write(&s, sizeof(Symbol *));
+                // Add symbol index to indirectsymbuf2
+                indirectsymbuf2->write32(s->Sxtrnnum);
 
              L2:
                 //printf("Obj::reftoident: seg = %d, offset = x%x, s = %s, val = x%x, pointersSeg = %d\n", seg, offset, s->Sident, val, pointersSeg);
